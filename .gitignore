@@ -64,20 +64,34 @@ Temporary Items
 
 # Tensorboard logs
 tensorboard_logs/
+tensorboard/
 runs/
 logs/
 
-# Model checkpoints
+# Model checkpoints y resultados de entrenamiento
+models/
 *.pth
 *.pt
 *.ckpt
 *.h5
+*.zip
+
+# Plots y visualizaciones generadas
+plots/
+*.png
+*.jpg
+*.jpeg
+*.mp4
+*.avi
 
 # Data files
 *.csv
-*.json
 *.pkl
 *.pickle
+
+# Resultados de experimentos (opcional - comentar si quieres versionar)
+results.json
+best_params.json
 
 # Temporary files
 *.tmp

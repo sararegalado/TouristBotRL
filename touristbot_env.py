@@ -37,23 +37,42 @@ class TouristBotEnv(gym.Env):
     - Acciones: 4 direcciones (arriba, abajo, izquierda, derecha)
     """
     
-    metadata = {'render.modes': ['human']}
+    metadata = {
+        'render_modes': ['human'],
+        'render_fps': 10
+    }
 
-    def __init__(self, goal_type="restaurant"):
+    def __init__(self, goal_type="restaurant", render_mode=None, use_partial_obs=True, view_size=5):
         super(TouristBotEnv, self).__init__()
+        
+        self.render_mode = render_mode
+        self.use_partial_obs = use_partial_obs  # Vista parcial vs completa
+        self.view_size = view_size  # Tamaño de la vista parcial (5x5 por defecto)
         
         # Espacio de acciones: 4 movimientos direccionales
         # 0: arriba, 1: abajo, 2: izquierda, 3: derecha
         self.action_space = spaces.Discrete(4)
         
-        # Espacio de observación: [agent_x, agent_y, goal_x, goal_y, goal_type]
-        # goal_type: 0=restaurant, 1=museum
-        self.observation_space = spaces.Box(
-            low=0,
-            high=GRID_SIZE,
-            shape=(5,),
-            dtype=np.float32
-        )
+        # Espacio de observación depende del modo
+        if use_partial_obs:
+            # Vista parcial: grid view_size x view_size + info del objetivo
+            # Cada celda codifica: 0=vacío, 1=restaurant, 2=museum, 3=agente
+            # + información adicional: [distancia_x, distancia_y, tipo_objetivo]
+            obs_size = view_size * view_size + 3
+            self.observation_space = spaces.Box(
+                low=-GRID_SIZE,
+                high=GRID_SIZE,
+                shape=(obs_size,),
+                dtype=np.float32
+            )
+        else:
+            # Observación completa: [agent_x, agent_y, goal_x, goal_y, goal_type]
+            self.observation_space = spaces.Box(
+                low=0,
+                high=GRID_SIZE,
+                shape=(5,),
+                dtype=np.float32
+            )
         
         # Estado del entorno
         self.agent_pos = [0, 0]  # Posición del agente [x, y]
@@ -68,9 +87,11 @@ class TouristBotEnv(gym.Env):
         self.steps = 0
         self.max_steps = 100
         self.total_reward = 0
+        self.visited_cells = set()  # Para reward shaping
         
-        print("🌆 TouristBot Environment inicializado")
+        print("🌆 TouristBot Environment v1.1 inicializado")
         print(f"   Grid: {GRID_SIZE}x{GRID_SIZE}")
+        print(f"   Vista: {'Parcial ' + str(view_size) + 'x' + str(view_size) if use_partial_obs else 'Completa'}")
         print(f"   Objetivo inicial: {goal_type}")
 
     def reset(self, *, seed=None, options=None):
@@ -94,6 +115,8 @@ class TouristBotEnv(gym.Env):
         # Resetear métricas
         self.steps = 0
         self.total_reward = 0
+        self.visited_cells = set()  # Limpiar células visitadas
+        self.visited_cells.add(tuple(self.agent_pos))  # Marcar posición inicial
         
         # Crear observación inicial
         observation = self._get_observation()
@@ -118,31 +141,40 @@ class TouristBotEnv(gym.Env):
         prev_distance = self._manhattan_distance(prev_pos, self.goal_pos)
         current_distance = self._manhattan_distance(self.agent_pos, self.goal_pos)
         
-        # Sistema de recompensas básico
+        # ===================================
+        # SISTEMA DE RECOMPENSAS MEJORADO
+        # ===================================
         reward = 0
         terminated = False
         
-        # 1. Recompensa por llegar al objetivo
+        # 1. RECOMPENSA GRANDE: Llegar al objetivo
         if self.agent_pos == self.goal_pos:
-            reward = +10.0
+            reward = +100.0
             terminated = True
             print(f"🎉 ¡Objetivo alcanzado en {self.steps} pasos!")
         
-        # 2. Recompensa por acercarse al objetivo
-        elif current_distance < prev_distance:
-            reward = +0.5
+        else:
+            # 2. REWARD SHAPING: Potencial basado en distancia
+            # Usar distancia normalizada para que la señal sea más fuerte
+            max_distance = GRID_SIZE * 2  # Máxima distancia Manhattan posible
+            potential_prev = -prev_distance / max_distance
+            potential_current = -current_distance / max_distance
+            shaping_reward = potential_current - potential_prev
+            reward += shaping_reward * 10  # Escalar para que sea significativo
+            
+            # 3. EXPLORACIÓN: Bonificación por visitar nuevas celdas
+            cell_tuple = tuple(self.agent_pos)
+            if cell_tuple not in self.visited_cells:
+                reward += 0.5
+                self.visited_cells.add(cell_tuple)
+            
+            # 4. EFICIENCIA: Pequeña penalización por paso
+            reward -= 0.1
         
-        # 3. Penalización por alejarse
-        elif current_distance > prev_distance:
-            reward = -0.5
-        
-        # 4. Pequeña penalización por cada paso (eficiencia)
-        reward -= 0.1
-        
-        # 5. Truncar si excede el máximo de pasos
+        # 5. TRUNCAR: Penalización fuerte si excede máximo de pasos
         truncated = self.steps >= self.max_steps
         if truncated:
-            reward -= 5.0
+            reward -= 10.0
             print(f"⏰ Tiempo agotado después de {self.steps} pasos")
         
         # Actualizar reward total
@@ -158,8 +190,11 @@ class TouristBotEnv(gym.Env):
         
         return observation, reward, terminated, truncated, info
 
-    def render(self, mode='human'):
+    def render(self):
         """Renderiza el entorno visualmente"""
+        if self.render_mode is None:
+            return None
+            
         # Limpiar imagen
         self.img = np.zeros((TABLE_SIZE, TABLE_SIZE, 3), dtype='uint8')
         
@@ -220,9 +255,12 @@ class TouristBotEnv(gym.Env):
             )
             y_offset += 20
         
-        # Mostrar ventana
-        cv2.imshow('TouristBot', self.img)
-        cv2.waitKey(1)
+        # Mostrar ventana solo si render_mode es 'human'
+        if self.render_mode == 'human':
+            cv2.imshow('TouristBot', self.img)
+            cv2.waitKey(1)
+        
+        return self.img if self.render_mode == 'rgb_array' else None
 
     def close(self):
         """Cierra las ventanas de visualización"""
@@ -280,18 +318,90 @@ class TouristBotEnv(gym.Env):
 
     def _get_observation(self):
         """
-        Crea el vector de observación:
-        [agent_x, agent_y, goal_x, goal_y, goal_type_encoded]
-        """
-        goal_type_encoded = PLACE_TYPES.index(self.goal_type)
+        Crea el vector de observación según el modo configurado
         
-        observation = np.array([
-            self.agent_pos[0],
-            self.agent_pos[1],
-            self.goal_pos[0],
-            self.goal_pos[1],
-            goal_type_encoded
-        ], dtype=np.float32)
+        Modo completo: [agent_x, agent_y, goal_x, goal_y, goal_type_encoded]
+        Modo parcial: [grid_5x5_flattened (25 valores), dist_x, dist_y, goal_type_encoded]
+        """
+        if not self.use_partial_obs:
+            # Observación completa (legacy)
+            goal_type_encoded = PLACE_TYPES.index(self.goal_type)
+            observation = np.array([
+                self.agent_pos[0],
+                self.agent_pos[1],
+                self.goal_pos[0],
+                self.goal_pos[1],
+                goal_type_encoded
+            ], dtype=np.float32)
+        else:
+            # Vista parcial: grid centrado en el agente
+            observation = self._get_partial_view()
+        
+        return observation
+    
+    def _get_partial_view(self):
+        """
+        Genera una vista parcial centrada en el agente (5x5 por defecto)
+        
+        Cada celda del grid codifica:
+        - 0: celda vacía
+        - 1: restaurant
+        - 2: museum  
+        - 3: agente (siempre en el centro)
+        
+        Retorna: array de tamaño (view_size*view_size + 3,)
+        - Primeros view_size*view_size valores: grid aplanado
+        - Últimos 3 valores: [distancia_x, distancia_y, tipo_objetivo]
+        """
+        half_view = self.view_size // 2
+        grid_view = np.zeros((self.view_size, self.view_size), dtype=np.float32)
+        
+        agent_x, agent_y = self.agent_pos
+        
+        # Llenar el grid con lo que el agente ve
+        for dy in range(-half_view, half_view + 1):
+            for dx in range(-half_view, half_view + 1):
+                # Posición absoluta en el grid
+                abs_x = agent_x + dx
+                abs_y = agent_y + dy
+                
+                # Índice en la vista local (centrada)
+                local_x = dx + half_view
+                local_y = dy + half_view
+                
+                # Si está fuera del grid, dejar en 0 (vacío/pared)
+                if abs_x < 0 or abs_x >= GRID_SIZE or abs_y < 0 or abs_y >= GRID_SIZE:
+                    grid_view[local_y, local_x] = 0
+                    continue
+                
+                # Verificar si hay un lugar en esta posición
+                pos_check = [abs_x, abs_y]
+                
+                # Agente siempre en el centro
+                if dx == 0 and dy == 0:
+                    grid_view[local_y, local_x] = 3
+                # Verificar restaurant
+                elif pos_check == self.places.get("restaurant"):
+                    grid_view[local_y, local_x] = 1
+                # Verificar museum
+                elif pos_check == self.places.get("museum"):
+                    grid_view[local_y, local_x] = 2
+                else:
+                    grid_view[local_y, local_x] = 0
+        
+        # Aplanar el grid (5x5 -> 25 valores)
+        grid_flat = grid_view.flatten()
+        
+        # Añadir información del objetivo
+        dist_x = self.goal_pos[0] - self.agent_pos[0]  # Diferencia en x
+        dist_y = self.goal_pos[1] - self.agent_pos[1]  # Diferencia en y
+        goal_type_encoded = float(PLACE_TYPES.index(self.goal_type))
+        
+        # Combinar: grid + info objetivo
+        observation = np.concatenate([
+            grid_flat,
+            np.array([dist_x, dist_y, goal_type_encoded], dtype=np.float32)
+        ])
         
         return observation
 

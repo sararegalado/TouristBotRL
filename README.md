@@ -1,183 +1,100 @@
-# 🌆 TouristBot - Reinforcement Learning Navigation Agent
+# 🌆 TouristBot - Agente de Navegación con RL
 
-Un agente de navegación turística que aprende a moverse por una ciudad 2D y completar tareas siguiendo instrucciones en lenguaje natural.
+Agente que aprende a navegar por una ciudad 2D para llegar a lugares específicos (restaurantes, museos) usando Reinforcement Learning.
 
-## 📋 Descripción del Proyecto
-
-TouristBot es un proyecto de Reinforcement Learning que combina navegación espacial con procesamiento de lenguaje natural. El agente (un turista) debe aprender a:
-
-- 🗺️ Navegar por una ciudad grid 2D
-- 🎯 Alcanzar objetivos específicos (restaurantes, museos, cafés, etc.)
-- 📝 Interpretar instrucciones en lenguaje natural
-- 🧠 Generalizar a nuevas instrucciones (zero-shot learning)
-
-## 🚀 Versión Actual: v1.0 (Básica)
-
-Esta es la primera iteración con funcionalidades mínimas:
-
-### Características implementadas ✅
-- Grid 10x10
-- 1 agente (turista)
-- 2 tipos de lugares: restaurante y museo
-- 4 acciones básicas: arriba, abajo, izquierda, derecha
-- Sistema de recompensas básico
-- Visualización con OpenCV
-- Compatible con Gymnasium
-
-### Estado del entorno
-```python
-observation = [agent_x, agent_y, goal_x, goal_y, goal_type_id]
-```
-
-### Acciones
-- `0`: Arriba (↑)
-- `1`: Abajo (↓)
-- `2`: Izquierda (←)
-- `3`: Derecha (→)
-
-## 📦 Instalación
-
-### Requisitos
-```bash
-pip install gymnasium
-pip install numpy
-pip install opencv-python
-```
-
-### Uso básico
-```python
-from touristbot_env import TouristBotEnv
-
-# Crear entorno
-env = TouristBotEnv(goal_type="restaurant")
-
-# Reset
-observation, info = env.reset()
-
-# Ejecutar paso
-action = env.action_space.sample()
-observation, reward, terminated, truncated, info = env.step(action)
-
-# Renderizar
-env.render()
-```
-
-## 🧪 Probar el Entorno
-
-### Opción 1: Script directo
-```bash
-cd /Users/sara/Documents/deusto_2025_2026/Aprendizaje\ por\ refuerzo/proyecto
-python touristbot_env.py
-```
-
-### Opción 2: Notebook interactivo
-```bash
-jupyter notebook test_touristbot.ipynb
 ```
 
 ## 📁 Estructura del Proyecto
 
 ```
 proyecto/
-├── touristbot_env.py           # Entorno principal
-├── test_touristbot.ipynb       # Notebook de pruebas
-├── Snake_env/                  # Entorno base (referencia)
-│   └── snakeenv.py
-└── README.md                   # Este archivo
+├── touristbot_env.py       # Entorno (Grid 10x10, vista parcial 5x5)
+├── train_ppo_basic.py      # Entrenamiento básico PPO
+├── train_advanced.py       # Curriculum + Comparación + Tuning
+├── analyze_results.py      # Análisis y visualización
+├── demo.py                 # Demo interactiva
+├── utils.py                # Utilidades (wrappers, callbacks)
 ```
 
-## 🎯 Roadmap - Próximas Versiones
+## 🎮 Uso Rápido
 
-### v1.1 - Más lugares y atributos
-- [ ] Añadir cafés, parking, tiendas, hoteles
-- [ ] Atributos semánticos: precio, atmósfera, ocupación
-- [ ] Grid más grande (20x20)
+### 1. Entrenar modelo básico
 
-### v1.2 - Instrucciones en lenguaje natural
-- [ ] Instrucciones como "busca un restaurante barato"
-- [ ] Embeddings de instrucciones (Sentence-BERT)
-- [ ] Espacio de observación multimodal
+```bash
+python train_ppo_basic.py --train
+```
 
-### v1.3 - Zero-shot classification
-- [ ] Integrar clasificador zero-shot (Hugging Face)
-- [ ] Mapear texto → estructura semántica
-- [ ] Reward shaping basado en atributos
+### 2. Probar modelo entrenado
 
-### v2.0 - Entrenamiento con RL
-- [ ] Implementar PPO con Stable Baselines3
-- [ ] Política condicionada por instrucciones
-- [ ] Curriculum learning
-- [ ] Evaluación zero-shot
+```bash
+python demo.py --model models/ppo_basic/ppo_touristbot_final.zip
+```
 
-### v2.1 - Vista parcial y realismo
-- [ ] Vista parcial del agente (7x7)
-- [ ] Observación visual con CNN
-- [ ] Generación procedural de ciudades
-- [ ] Diferentes layouts (Barrio Gótico, Zona Moderna, etc.)
+### 3. Ver progreso en TensorBoard
 
-### v3.0 - Features avanzadas
-- [ ] Múltiples objetivos secuenciales
-- [ ] Personas en movimiento (lugares concurridos)
-- [ ] Inventario (dinero, tickets)
-- [ ] Demo interactiva con Streamlit
+```bash
+tensorboard --logdir ./tensorboard/ppo_basic/
+```
 
-## 📊 Sistema de Recompensas (v1.0)
+## 🎓 Técnicas Avanzadas
+
+### Curriculum Learning
+```bash
+python train_advanced.py --mode curriculum
+```
+Entrena progresivamente reduciendo tiempo disponible (150→100→75 pasos).
+
+### Comparar Algoritmos (PPO vs SAC vs DQN)
+```bash
+python train_advanced.py --mode compare --timesteps 100000
+```
+
+### Hyperparameter Tuning (Optuna)
+```bash
+python train_advanced.py --mode tune --trials 50
+```
+
+## 📊 Análisis de Resultados
+
+```bash
+# Curvas de aprendizaje
+python analyze_results.py --plot-learning logs/ppo_basic/
+
+# Visualizar política
+python analyze_results.py --visualize-policy models/ppo_basic/best_model.zip
+
+# Reporte completo
+python analyze_results.py --full-report models/ppo_basic/best_model.zip logs/ppo_basic/
+```
+
+## 🎯 Características del Entorno
+
+- **Grid**: 10x10 celdas
+- **Observación**: Vista parcial 5x5 (28 valores)
+- **Acciones**: 4 direccionales (↑↓←→)
+- **Reward shaping**: Potencial basado en distancia + exploration bonus
+- **Compatible**: Gymnasium, Stable-Baselines3
+
+## 📈 Configuración
+
+Editar `CONFIG` en `train_ppo_basic.py`:
 
 ```python
-+10.0  # Alcanzar el objetivo
-+0.5   # Acercarse al objetivo
--0.5   # Alejarse del objetivo
--0.1   # Cada paso (penalización de eficiencia)
--5.0   # Exceder máximo de pasos
+CONFIG = {
+    "use_partial_obs": True,    # Vista parcial
+    "view_size": 5,              # Tamaño vista
+    "n_envs": 4,                 # Entornos paralelos
+    "total_timesteps": 200000,   # Timesteps
+    "learning_rate": 3e-4,       # Learning rate
+}
 ```
 
-## 🧠 Arquitectura Futura (v2.0+)
+## 🏆 Resultados Esperados
 
-```
-┌─────────────────┐
-│  Instrucción    │ → Sentence-BERT → [384-dim embedding]
-└─────────────────┘                            ↓
-                                          ┌─────────┐
-┌─────────────────┐                       │         │
-│  Vista Grid     │ → CNN → [256-dim] →  │  Fusion │ → Policy (PPO)
-└─────────────────┘                       │   MLP   │
-                                          └─────────┘
-```
-
-## 🔬 Comparación con Snake Environment
-
-| Característica | Snake | TouristBot v1.0 |
-|---------------|-------|-----------------|
-| Grid size | 50x50 | 10x10 |
-| Objetivo | Comer manzanas | Llegar a lugares |
-| Acciones | 4 direcciones | 4 direcciones |
-| Observación | Posición + historial | Posición + objetivo |
-| Crecimiento | Sí (snake crece) | No |
-| Auto-colisión | Sí (pierde) | No |
-| Complejidad | Media | Baja (v1.0) |
-
-## 🤝 Contribuciones
-
-Este es un proyecto académico para el curso de Aprendizaje por Refuerzo.
-
-### Autor
-- Sara Regalado
-- Universidad de Deusto
-- 2025-2026
-
-## 📄 Licencia
-
-MIT License - Uso académico
-
-## 📚 Referencias
-
-- [Gymnasium Documentation](https://gymnasium.farama.org/)
-- [Stable Baselines3](https://stable-baselines3.readthedocs.io/)
-- [Sentence Transformers](https://www.sbert.net/)
-- [MiniGrid Environment](https://github.com/Farama-Foundation/Minigrid)
+- **Tasa de éxito**: 70-95%
+- **Pasos promedio**: 10-25
+- **Tiempo entrenamiento**: 10-30 min (CPU)
 
 ---
 
-**Versión**: 1.0.0  
-**Última actualización**: 12 de noviembre de 2025  
-**Estado**: 🟢 Funcional (básico)
+**Autoras**: Sara Regalado | Zaloa Fernandez | Universidad de Deusto 2025-2026
