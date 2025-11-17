@@ -1,6 +1,3 @@
-# TouristBot Environment - Versión Básica v1.0
-# Basado en Snake_env, adaptado para navegación turística
-
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
@@ -9,34 +6,27 @@ import random
 import time
 from collections import deque
 
-# ======================
-# CONFIGURACIÓN BÁSICA
-# ======================
-GRID_SIZE = 10  # Grid 10x10
-CELL_SIZE = 50  # Cada celda = 50x50 px
-TABLE_SIZE = GRID_SIZE * CELL_SIZE  # 500x500 px
+# Configuration
+GRID_SIZE = 20  # Grid 20x20
+CELL_SIZE = 30  # Size of each cell = 30x30 px
+TABLE_SIZE = GRID_SIZE * CELL_SIZE  # 600x600 px
 
-# Colores para visualización (BGR para OpenCV)
+# RGB colors for visualization
 COLORS = {
-    "background": (0, 0, 0),        # Negro
-    "agent": (255, 255, 255),       # Blanco (turista)
-    "restaurant": (0, 165, 255),    # Naranja
-    "museum": (0, 0, 255),          # Rojo
-    "visited": (50, 50, 50),        # Gris oscuro
+    "background": (0, 0, 0),        # Black
+    "agent": (255, 255, 255),       # White (agent)
+    "restaurant": (0, 165, 255),    # Orange
+    "museum": (0, 0, 255),          # Red
+    "visited": (50, 50, 50),        # Dark grey
+    "street": (80, 80, 80),         # Bright grey (streets)
+    "building": (40, 40, 40),       # Dark grey (Buildings)
 }
 
-# Tipos de lugares disponibles
+# Types of different places
 PLACE_TYPES = ["restaurant", "museum"]
 
-
+# Define the environment class
 class TouristBotEnv(gym.Env):
-    """
-    Entorno básico de TouristBot:
-    - El agente (turista) debe navegar por una ciudad grid 10x10
-    - Objetivo: llegar a un lugar específico (restaurant o museum)
-    - Acciones: 4 direcciones (arriba, abajo, izquierda, derecha)
-    """
-    
     metadata = {
         'render_modes': ['human'],
         'render_fps': 10
@@ -56,7 +46,7 @@ class TouristBotEnv(gym.Env):
         # Espacio de observación depende del modo
         if use_partial_obs:
             # Vista parcial: grid view_size x view_size + info del objetivo
-            # Cada celda codifica: 0=vacío, 1=restaurant, 2=museum, 3=agente
+            # Cada celda codifica: 0=edificio, 1=calle, 2=restaurant, 3=museum, 4=agente
             # + información adicional: [distancia_x, distancia_y, tipo_objetivo]
             obs_size = view_size * view_size + 3
             self.observation_space = spaces.Box(
@@ -80,18 +70,23 @@ class TouristBotEnv(gym.Env):
         self.goal_pos = [0, 0]  # Posición del objetivo
         self.places = {}  # Diccionario de lugares {tipo: posición}
         
+        # Estructura de la ciudad (matriz que indica qué es cada celda)
+        # 0 = edificio (bloqueado), 1 = calle (transitable)
+        self.city_map = self._generate_city_map()
+        
         # Visualización
         self.img = np.zeros((TABLE_SIZE, TABLE_SIZE, 3), dtype='uint8')
         
         # Métricas
         self.steps = 0
-        self.max_steps = 100
+        self.max_steps = 200  # Aumentado por el tamaño del grid
         self.total_reward = 0
         self.visited_cells = set()  # Para reward shaping
         
-        print("🌆 TouristBot Environment v1.1 inicializado")
+        print("🌆 TouristBot Environment v2.0 inicializado")
         print(f"   Grid: {GRID_SIZE}x{GRID_SIZE}")
         print(f"   Vista: {'Parcial ' + str(view_size) + 'x' + str(view_size) if use_partial_obs else 'Completa'}")
+        print(f"   Estructura: Ciudad con calles")
         print(f"   Objetivo inicial: {goal_type}")
 
     def reset(self, *, seed=None, options=None):
@@ -103,10 +98,13 @@ class TouristBotEnv(gym.Env):
         if options and "goal_type" in options:
             self.goal_type = options["goal_type"]
         
-        # Posición inicial del agente (esquina inferior izquierda)
-        self.agent_pos = [1, GRID_SIZE - 2]  # [x, y]
+        # Regenerar el mapa de la ciudad con la nueva seed
+        self.city_map = self._generate_city_map()
         
-        # Generar lugares de forma aleatoria pero fija
+        # Posición inicial del agente en una calle (buscar una posición válida)
+        self.agent_pos = self._find_random_street_position()
+        
+        # Generar lugares de forma aleatoria pero en calles
         self._generate_places()
         
         # Establecer el objetivo según el tipo (hacer copia para evitar referencias)
@@ -198,32 +196,59 @@ class TouristBotEnv(gym.Env):
         # Limpiar imagen
         self.img = np.zeros((TABLE_SIZE, TABLE_SIZE, 3), dtype='uint8')
         
+        # Dibujar ciudad: calles y edificios
+        for y in range(GRID_SIZE):
+            for x in range(GRID_SIZE):
+                if self.city_map[y, x] == 1:  # Calle
+                    color = COLORS["street"]
+                else:  # Edificio
+                    color = COLORS["building"]
+                
+                cv2.rectangle(
+                    self.img,
+                    (x * CELL_SIZE, y * CELL_SIZE),
+                    ((x + 1) * CELL_SIZE, (y + 1) * CELL_SIZE),
+                    color,
+                    -1
+                )
+        
         # Dibujar grid
         for i in range(GRID_SIZE + 1):
             # Líneas verticales
-            cv2.line(self.img, (i * CELL_SIZE, 0), (i * CELL_SIZE, TABLE_SIZE), (30, 30, 30), 1)
+            cv2.line(self.img, (i * CELL_SIZE, 0), (i * CELL_SIZE, TABLE_SIZE), (60, 60, 60), 1)
             # Líneas horizontales
-            cv2.line(self.img, (0, i * CELL_SIZE), (TABLE_SIZE, i * CELL_SIZE), (30, 30, 30), 1)
+            cv2.line(self.img, (0, i * CELL_SIZE), (TABLE_SIZE, i * CELL_SIZE), (60, 60, 60), 1)
         
         # Dibujar lugares
         for place_type, pos in self.places.items():
             color = COLORS[place_type]
             x, y = pos
+            margin = max(2, CELL_SIZE // 6)
             cv2.rectangle(
                 self.img,
-                (x * CELL_SIZE + 5, y * CELL_SIZE + 5),
-                ((x + 1) * CELL_SIZE - 5, (y + 1) * CELL_SIZE - 5),
+                (x * CELL_SIZE + margin, y * CELL_SIZE + margin),
+                ((x + 1) * CELL_SIZE - margin, (y + 1) * CELL_SIZE - margin),
                 color,
                 -1
             )
-            # Añadir etiqueta
-            label = place_type[:4].upper()
+            # Añadir etiqueta (solo primera letra si la celda es muy pequeña)
+            if CELL_SIZE >= 40:
+                label = place_type[:4].upper()
+                font_scale = 0.4
+            else:
+                label = place_type[0].upper()
+                font_scale = 0.3
+            
+            text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1)[0]
+            text_x = x * CELL_SIZE + (CELL_SIZE - text_size[0]) // 2
+            text_y = y * CELL_SIZE + (CELL_SIZE + text_size[1]) // 2
+            
             cv2.putText(
                 self.img,
                 label,
-                (x * CELL_SIZE + 8, y * CELL_SIZE + 30),
+                (text_x, text_y),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.4,
+                font_scale,
                 (255, 255, 255),
                 1
             )
@@ -231,8 +256,9 @@ class TouristBotEnv(gym.Env):
         # Dibujar agente (turista) - círculo blanco
         agent_x, agent_y = self.agent_pos
         center = (agent_x * CELL_SIZE + CELL_SIZE // 2, agent_y * CELL_SIZE + CELL_SIZE // 2)
-        cv2.circle(self.img, center, 15, COLORS["agent"], -1)
-        cv2.circle(self.img, center, 15, (100, 100, 100), 2)  # Borde
+        radius = max(8, CELL_SIZE // 3)  # Radio adaptativo según tamaño de celda
+        cv2.circle(self.img, center, radius, COLORS["agent"], -1)
+        cv2.circle(self.img, center, radius, (100, 100, 100), 2)  # Borde
         
         # Añadir información en pantalla
         info_text = [
@@ -270,51 +296,141 @@ class TouristBotEnv(gym.Env):
     # MÉTODOS PRIVADOS
     # ==================
     
+    def _generate_city_map(self):
+        """
+        Genera un mapa de ciudad con calles y edificios
+        0 = edificio (bloqueado), 1 = calle (transitable)
+        
+        Patrón: cuadrícula con calles cada 4 celdas (estilo Manhattan)
+        """
+        city_map = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.int8)
+        
+        # Crear calles horizontales cada 4 filas
+        for y in range(0, GRID_SIZE, 4):
+            city_map[y, :] = 1
+        
+        # Crear calles verticales cada 4 columnas
+        for x in range(0, GRID_SIZE, 4):
+            city_map[:, x] = 1
+        
+        # Los bordes también son calles para asegurar conectividad
+        city_map[0, :] = 1
+        city_map[-1, :] = 1
+        city_map[:, 0] = 1
+        city_map[:, -1] = 1
+        
+        return city_map
+    
+    def _find_random_street_position(self):
+        """Encuentra una posición aleatoria que sea una calle"""
+        # Obtener todas las posiciones que son calles
+        street_positions = np.argwhere(self.city_map == 1)
+        
+        # Seleccionar una aleatoria
+        if len(street_positions) > 0:
+            idx = self.np_random.integers(0, len(street_positions))
+            y, x = street_positions[idx]
+            return [int(x), int(y)]
+        else:
+            # Fallback: esquina superior izquierda
+            return [0, 0]
+    
+    def _find_random_building_position(self):
+        """Encuentra una posición aleatoria que sea un edificio (no calle)"""
+        # Obtener todas las posiciones que son edificios
+        building_positions = np.argwhere(self.city_map == 0)
+        
+        # Seleccionar una aleatoria
+        if len(building_positions) > 0:
+            idx = self.np_random.integers(0, len(building_positions))
+            y, x = building_positions[idx]
+            return [int(x), int(y)]
+        else:
+            # Fallback: posición 1,1
+            return [1, 1]
+    
+    def _is_adjacent_to_street(self, pos):
+        """Verifica si una posición tiene al menos una calle adyacente"""
+        x, y = pos
+        # Verificar las 4 direcciones adyacentes
+        adjacent_positions = [
+            (x, y-1),  # arriba
+            (x, y+1),  # abajo
+            (x-1, y),  # izquierda
+            (x+1, y)   # derecha
+        ]
+        
+        for adj_x, adj_y in adjacent_positions:
+            # Verificar límites
+            if 0 <= adj_x < GRID_SIZE and 0 <= adj_y < GRID_SIZE:
+                # Verificar si es una calle
+                if self.city_map[adj_y, adj_x] == 1:
+                    return True
+        return False
+    
     def _generate_places(self):
-        """Genera lugares en posiciones aleatorias del grid usando el RNG del entorno"""
+        """Genera restaurantes y museos en ubicaciones aleatorias DENTRO DE EDIFICIOS con acceso desde calles"""
         self.places = {}
         
-        # Restaurant en la mitad superior derecha
-        # Usamos self.np_random que es el RNG oficial de Gymnasium
-        # integers(low, high) genera números en [low, high)
-        self.places["restaurant"] = [
-            int(self.np_random.integers(GRID_SIZE // 2, GRID_SIZE)),
-            int(self.np_random.integers(1, GRID_SIZE // 2 + 1))
-        ]
+        # Obtener todas las posiciones de edificios que tienen al menos una calle adyacente
+        building_positions = np.argwhere(self.city_map == 0)
+        accessible_buildings = []
         
-        # Museum en la mitad superior izquierda
-        self.places["museum"] = [
-            int(self.np_random.integers(1, GRID_SIZE // 2 + 1)),
-            int(self.np_random.integers(1, GRID_SIZE // 2 + 1))
-        ]
+        for pos in building_positions:
+            y, x = pos
+            pos_list = [int(x), int(y)]
+            if self._is_adjacent_to_street(pos_list):
+                accessible_buildings.append(pos_list)
         
-        # Asegurar que no están en la misma posición
-        max_attempts = 10
-        attempts = 0
-        while self.places["restaurant"] == self.places["museum"] and attempts < max_attempts:
-            self.places["museum"] = [
-                int(self.np_random.integers(1, GRID_SIZE // 2 + 1)),
-                int(self.np_random.integers(1, GRID_SIZE // 2 + 1))
-            ]
-            attempts += 1
+        if len(accessible_buildings) < 2:
+            # Fallback: usar edificios aunque no tengan acceso directo
+            print("⚠️ Advertencia: Pocos edificios accesibles, usando posiciones alternativas")
+            for pos in building_positions[:2]:
+                y, x = pos
+                accessible_buildings.append([int(x), int(y)])
+        
+        # Seleccionar posiciones aleatorias para los lugares (asegurar que sean diferentes)
+        indices = self.np_random.choice(len(accessible_buildings), size=min(2, len(accessible_buildings)), replace=False)
+        
+        # Restaurant en edificio
+        self.places["restaurant"] = accessible_buildings[indices[0]]
+        
+        # Museum en edificio (diferente al restaurant)
+        if len(indices) > 1:
+            self.places["museum"] = accessible_buildings[indices[1]]
+        else:
+            # Si solo hay un edificio accesible, poner el museum en otro edificio
+            self.places["museum"] = self._find_random_building_position()
 
     def _take_action(self, action):
         """
         Ejecuta la acción de movimiento
         0: arriba, 1: abajo, 2: izquierda, 3: derecha
+        Se puede mover a calles o a edificios con lugares de interés (restaurant/museum)
         """
         x, y = self.agent_pos
+        new_x, new_y = x, y
         
         if action == 0:  # Arriba
-            y = max(0, y - 1)
+            new_y = max(0, y - 1)
         elif action == 1:  # Abajo
-            y = min(GRID_SIZE - 1, y + 1)
+            new_y = min(GRID_SIZE - 1, y + 1)
         elif action == 2:  # Izquierda
-            x = max(0, x - 1)
+            new_x = max(0, x - 1)
         elif action == 3:  # Derecha
-            x = min(GRID_SIZE - 1, x + 1)
+            new_x = min(GRID_SIZE - 1, x + 1)
         
-        self.agent_pos = [x, y]
+        new_pos = [new_x, new_y]
+        
+        # Permitir movimiento si:
+        # 1. Es una calle
+        # 2. Es un edificio con un lugar de interés (restaurant o museum)
+        if self.city_map[new_y, new_x] == 1:  # Es calle
+            self.agent_pos = new_pos
+        elif new_pos == self.places.get("restaurant") or new_pos == self.places.get("museum"):
+            # Es un lugar de interés, permitir acceso
+            self.agent_pos = new_pos
+        # Si es un edificio normal (sin lugares de interés), no se mueve
 
     def _get_observation(self):
         """
@@ -344,10 +460,11 @@ class TouristBotEnv(gym.Env):
         Genera una vista parcial centrada en el agente (5x5 por defecto)
         
         Cada celda del grid codifica:
-        - 0: celda vacía
-        - 1: restaurant
-        - 2: museum  
-        - 3: agente (siempre en el centro)
+        - 0: edificio (bloqueado)
+        - 1: calle (transitable)
+        - 2: restaurant
+        - 3: museum  
+        - 4: agente (siempre en el centro)
         
         Retorna: array de tamaño (view_size*view_size + 3,)
         - Primeros view_size*view_size valores: grid aplanado
@@ -369,7 +486,7 @@ class TouristBotEnv(gym.Env):
                 local_x = dx + half_view
                 local_y = dy + half_view
                 
-                # Si está fuera del grid, dejar en 0 (vacío/pared)
+                # Si está fuera del grid, marcar como edificio (bloqueado)
                 if abs_x < 0 or abs_x >= GRID_SIZE or abs_y < 0 or abs_y >= GRID_SIZE:
                     grid_view[local_y, local_x] = 0
                     continue
@@ -379,15 +496,16 @@ class TouristBotEnv(gym.Env):
                 
                 # Agente siempre en el centro
                 if dx == 0 and dy == 0:
-                    grid_view[local_y, local_x] = 3
+                    grid_view[local_y, local_x] = 4
                 # Verificar restaurant
                 elif pos_check == self.places.get("restaurant"):
-                    grid_view[local_y, local_x] = 1
+                    grid_view[local_y, local_x] = 2
                 # Verificar museum
                 elif pos_check == self.places.get("museum"):
-                    grid_view[local_y, local_x] = 2
+                    grid_view[local_y, local_x] = 3
+                # Mostrar si es calle o edificio
                 else:
-                    grid_view[local_y, local_x] = 0
+                    grid_view[local_y, local_x] = float(self.city_map[abs_y, abs_x])
         
         # Aplanar el grid (5x5 -> 25 valores)
         grid_flat = grid_view.flatten()

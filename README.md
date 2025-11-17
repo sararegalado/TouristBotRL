@@ -69,11 +69,25 @@ python analyze_results.py --full-report models/ppo_basic/best_model.zip logs/ppo
 
 ## 🎯 Características del Entorno
 
-- **Grid**: 10x10 celdas
+- **Grid**: 20x20 celdas (ciudad expandida)
+- **Estructura**: Ciudad con calles estilo Manhattan
+  - Calles transitables cada 4 celdas (horizontal y vertical)
+  - Edificios bloqueados entre calles
+  - 204 celdas transitables, 196 bloqueadas
 - **Observación**: Vista parcial 5x5 (28 valores)
+  - Codificación: 0=edificio, 1=calle, 2=restaurant, 3=museum, 4=agente
 - **Acciones**: 4 direccionales (↑↓←→)
+  - Solo se puede mover por calles, los edificios bloquean el movimiento
 - **Reward shaping**: Potencial basado en distancia + exploration bonus
+- **Tiempo máximo**: 200 pasos (aumentado por el tamaño del grid)
 - **Compatible**: Gymnasium, Stable-Baselines3
+
+### 🏙️ Visualizar la Estructura de Ciudad
+
+```bash
+python demo_city.py
+```
+Este script muestra el mapa de calles y edificios tanto en texto como visualmente.
 
 ## 📈 Configuración
 

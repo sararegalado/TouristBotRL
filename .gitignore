@@ -102,4 +102,3 @@ best_params.json
 # Test files (opcional - descomentar si no quieres subirlos)
 # test_*.py
 # *_test.py
-.DS_Store
