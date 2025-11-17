@@ -1,20 +1,3 @@
-"""
-Entrenamiento avanzado de TouristBot con técnicas de RL modernas
-================================================================
-
-Implementa técnicas avanzadas:
-- Curriculum Learning
-- Hyperparameter tuning
-- Comparación de algoritmos (PPO vs SAC vs DQN)
-- Feature engineering
-- Reward scaling
-
-Uso:
-    python train_advanced.py --mode curriculum
-    python train_advanced.py --mode compare
-    python train_advanced.py --mode tune
-"""
-
 import os
 import numpy as np
 from datetime import datetime
@@ -30,10 +13,7 @@ import optuna
 from touristbot_env import TouristBotEnv
 
 
-# ============================================
-# CONFIGURACIONES AVANZADAS
-# ============================================
-
+# Configuration
 CONFIGS = {
     "ppo_optimized": {
         "algorithm": "PPO",
@@ -58,7 +38,7 @@ CONFIGS = {
         "gamma": 0.99,
         "gae_lambda": 0.95,
         "clip_range": 0.2,
-        "ent_coef": 0.05,  # Mayor exploración
+        "ent_coef": 0.05,
         "vf_coef": 0.5,
         "max_grad_norm": 0.5,
     },
@@ -88,49 +68,36 @@ CONFIGS = {
 }
 
 
-# ============================================
-# CALLBACKS PERSONALIZADOS
-# ============================================
-
+# Callbacks
 class CurriculumCallback(BaseCallback):
-    """
-    Callback para Curriculum Learning
-    Aumenta gradualmente la dificultad del entorno
-    """
+   # Callback for curriculum learning
     def __init__(self, milestones: Dict[int, Dict[str, Any]], verbose=0):
         super().__init__(verbose)
         self.milestones = milestones
         
     def _on_step(self) -> bool:
-        # Verificar si alcanzamos un milestone
         for timestep, changes in self.milestones.items():
             if self.num_timesteps == timestep:
                 if self.verbose > 0:
                     print(f"\n🎓 Curriculum milestone {timestep}: {changes}")
                 
-                # Aplicar cambios al entorno
-                # (Esto requeriría modificar el entorno dinámicamente)
+                
                 
         return True
 
-
+# Callback to scale rewards dinamically
 class RewardScalingCallback(BaseCallback):
-    """
-    Callback para escalar rewards dinámicamente
-    """
+    
     def __init__(self, scale_factor=1.0, verbose=0):
         super().__init__(verbose)
         self.scale_factor = scale_factor
         
     def _on_step(self) -> bool:
-        # Escalar rewards si es necesario
         return True
 
 
-# ============================================
-# FUNCIONES DE ENTRENAMIENTO
-# ============================================
 
+# Training functions for Curriculum learning
 def train_with_curriculum():
     """
     Entrenamiento con Curriculum Learning
@@ -140,8 +107,6 @@ def train_with_curriculum():
     2. Medio: Vista parcial 5x5, max_steps=100 (tiempo normal)
     3. Difícil: Vista parcial 5x5, max_steps=75 (menos tiempo)
     
-    Nota: Todas las fases usan el mismo observation space para permitir
-    transferencia de conocimiento entre fases.
     """
     print("="*70)
     print("🎓 CURRICULUM LEARNING")
@@ -181,7 +146,7 @@ def train_with_curriculum():
     
     for i, phase in enumerate(phases):
         print(f"\n{'='*70}")
-        print(f"📚 {phase['name']}")
+        print(f"{phase['name']}")
         print(f"   Max steps: {phase['max_steps']}")
         print(f"   Timesteps: {phase['timesteps']:,}")
         print(f"{'='*70}\n")
@@ -225,12 +190,12 @@ def train_with_curriculum():
         # Guardar checkpoint
         checkpoint_path = f"./models/curriculum/phase_{i+1}_final"
         model.save(checkpoint_path)
-        print(f"\n✅ Fase {i+1} completada. Modelo guardado: {checkpoint_path}")
+        print(f"\nFase {i+1} completada. Modelo guardado: {checkpoint_path}")
         
         env.close()
     
     print(f"\n{'='*70}")
-    print(f"✅ CURRICULUM LEARNING COMPLETADO")
+    print(f"CURRICULUM LEARNING COMPLETADO")
     print(f"{'='*70}")
     print(f"Modelos guardados en ./models/curriculum/")
     print(f"Mejor modelo: phase_3_final.zip (entrenado en todas las fases)")
@@ -243,7 +208,7 @@ def compare_algorithms(timesteps=100000):
     Compara diferentes algoritmos de RL
     """
     print("="*70)
-    print("⚖️  COMPARACIÓN DE ALGORITMOS")
+    print("COMPARACIÓN DE ALGORITMOS")
     print("="*70)
     
     algorithms = {
@@ -256,7 +221,7 @@ def compare_algorithms(timesteps=100000):
     
     for algo_name, AlgoClass in algorithms.items():
         print(f"\n{'='*70}")
-        print(f"🤖 Entrenando {algo_name}")
+        print(f"Entrenando {algo_name}")
         print(f"{'='*70}\n")
         
         # Crear entorno
@@ -271,7 +236,7 @@ def compare_algorithms(timesteps=100000):
         log_dir = f"./logs/comparison/{algo_name.lower()}/"
         os.makedirs(log_dir, exist_ok=True)
         
-        # Callback de evaluación
+        # Evaluation callback
         eval_callback = EvalCallback(
             eval_env,
             best_model_save_path=f"./models/comparison/{algo_name.lower()}/",
@@ -282,7 +247,7 @@ def compare_algorithms(timesteps=100000):
         )
         
         try:
-            # Crear modelo con configuración específica
+            # Create model with specific configuration
             config = CONFIGS.get(algo_name.lower(), {})
             config_filtered = {k: v for k, v in config.items() if k != "algorithm"}
             
@@ -309,16 +274,16 @@ def compare_algorithms(timesteps=100000):
             results[algo_name] = stats
             
         except Exception as e:
-            print(f"❌ Error entrenando {algo_name}: {e}")
+            print(f"Error entrenando {algo_name}: {e}")
             results[algo_name] = {"error": str(e)}
         
         finally:
             env.close()
             eval_env.close()
     
-    # Mostrar comparación
+    # Show comparison
     print(f"\n{'='*70}")
-    print(f"📊 RESULTADOS DE LA COMPARACIÓN")
+    print(f"RESULTADOS DE LA COMPARACIÓN")
     print(f"{'='*70}\n")
     
     for algo_name, stats in results.items():
@@ -342,13 +307,13 @@ def tune_hyperparameters(n_trials=50):
     Optimización de hiperparámetros con Optuna
     """
     print("="*70)
-    print("🔧 HYPERPARAMETER TUNING CON OPTUNA")
+    print("HYPERPARAMETER TUNING CON OPTUNA")
     print("="*70)
     
     def objective(trial):
         """Función objetivo para Optuna"""
         
-        # Sugerir hiperparámetros
+        # Suggest hyperparameters
         learning_rate = trial.suggest_loguniform("learning_rate", 1e-5, 1e-3)
         n_steps = trial.suggest_categorical("n_steps", [512, 1024, 2048])
         batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
@@ -388,7 +353,7 @@ def tune_hyperparameters(n_trials=50):
         env.close()
         eval_env.close()
         
-        # Retornar métrica a optimizar (tasa de éxito)
+        # Return metric to optimize (success rate)
         return stats["success_rate"]
     
     # Crear estudio
@@ -396,7 +361,7 @@ def tune_hyperparameters(n_trials=50):
     study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
     
     print(f"\n{'='*70}")
-    print(f"🏆 MEJORES HIPERPARÁMETROS")
+    print(f"MEJORES HIPERPARÁMETROS")
     print(f"{'='*70}\n")
     print(f"Tasa de éxito: {study.best_value*100:.1f}%\n")
     
@@ -437,7 +402,7 @@ def evaluate_model(model, env, n_episodes=50):
             if isinstance(info, list):
                 info = info[0]
         
-        # Verificar si fue éxito
+        # Check if success
         if "TimeLimit.truncated" not in info or not info.get("TimeLimit.truncated", False):
             successes += 1
         
@@ -452,10 +417,6 @@ def evaluate_model(model, env, n_episodes=50):
         "std_reward": np.std(rewards_list)
     }
 
-
-# ============================================
-# MAIN
-# ============================================
 
 if __name__ == "__main__":
     import argparse

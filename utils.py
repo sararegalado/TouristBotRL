@@ -1,30 +1,13 @@
-"""
-Utilidades para entrenamiento y evaluación
-==========================================
-
-Funciones auxiliares para:
-- Configuración de entornos
-- Wrappers personalizados
-- Callbacks útiles
-- Métricas customizadas
-"""
-
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.vec_env import VecEnv
 import cv2
+import pandas as pd
 
-
-# ============================================
-# WRAPPERS PERSONALIZADOS
-# ============================================
-
+# Wrappers
 class RewardScalingWrapper(gym.Wrapper):
-    """
-    Escala los rewards para mejorar el aprendizaje
-    """
     def __init__(self, env, scale_factor=0.01):
         super().__init__(env)
         self.scale_factor = scale_factor
@@ -35,10 +18,8 @@ class RewardScalingWrapper(gym.Wrapper):
         return obs, scaled_reward, terminated, truncated, info
 
 
+# Add temporal information to the observation
 class TimeAwareObservationWrapper(gym.ObservationWrapper):
-    """
-    Añade información temporal a la observación
-    """
     def __init__(self, env):
         super().__init__(env)
         
@@ -53,16 +34,12 @@ class TimeAwareObservationWrapper(gym.ObservationWrapper):
         )
     
     def observation(self, obs):
-        # Añadir tiempo normalizado (steps / max_steps)
+        # Add normalized time
         time_normalized = self.env.steps / self.env.max_steps
         return np.append(obs, time_normalized)
 
 
 class FrameStackWrapper(gym.Wrapper):
-    """
-    Apila las últimas N observaciones
-    Útil para dar información temporal al agente
-    """
     def __init__(self, env, n_stack=4):
         super().__init__(env)
         self.n_stack = n_stack
@@ -93,14 +70,8 @@ class FrameStackWrapper(gym.Wrapper):
         return np.concatenate(self.frames)
 
 
-# ============================================
-# CALLBACKS PERSONALIZADOS
-# ============================================
 
 class SuccessRateCallback(BaseCallback):
-    """
-    Callback para trackear la tasa de éxito durante el entrenamiento
-    """
     def __init__(self, check_freq=1000, verbose=1):
         super().__init__(verbose)
         self.check_freq = check_freq
@@ -108,7 +79,7 @@ class SuccessRateCallback(BaseCallback):
         self.episode_count = 0
         
     def _on_step(self) -> bool:
-        # Verificar si el episodio terminó
+        # Check if episode ended
         if self.locals.get("dones") is not None:
             dones = self.locals["dones"]
             infos = self.locals["infos"]
@@ -117,7 +88,7 @@ class SuccessRateCallback(BaseCallback):
                 if done:
                     self.episode_count += 1
                     
-                    # Verificar si fue éxito (no timeout)
+                    # Check if success (not timeout)
                     if "TimeLimit.truncated" not in info or not info["TimeLimit.truncated"]:
                         self.success_count += 1
         
@@ -133,9 +104,6 @@ class SuccessRateCallback(BaseCallback):
 
 
 class ProgressBarCallback(BaseCallback):
-    """
-    Callback para mostrar barra de progreso personalizada
-    """
     def __init__(self, total_timesteps):
         super().__init__()
         self.total_timesteps = total_timesteps
@@ -154,15 +122,12 @@ class ProgressBarCallback(BaseCallback):
             print(f"\rProgreso: [{bar}] {progress*100:.1f}% - {self.num_timesteps}/{self.total_timesteps}", end='')
             
             if progress >= 1.0:
-                print()  # Nueva línea al terminar
+                print()
         
         return True
 
 
 class SaveBestModelCallback(BaseCallback):
-    """
-    Guarda el mejor modelo basado en reward promedio
-    """
     def __init__(self, save_path, check_freq=10000, verbose=1):
         super().__init__(verbose)
         self.save_path = save_path
@@ -183,7 +148,7 @@ class SaveBestModelCallback(BaseCallback):
                 self.best_mean_reward = mean_reward
                 
                 if self.verbose > 0:
-                    print(f"\n🏆 Nuevo mejor modelo! Reward promedio: {mean_reward:.2f}")
+                    print(f"\nNuevo mejor modelo! Reward promedio: {mean_reward:.2f}")
                 
                 self.model.save(self.save_path)
             
@@ -192,17 +157,8 @@ class SaveBestModelCallback(BaseCallback):
         return True
 
 
-# ============================================
-# FUNCIONES DE EVALUACIÓN
-# ============================================
-
+# Evaluation functions
 def evaluate_policy_detailed(model, env, n_eval_episodes=100, deterministic=True):
-    """
-    Evaluación detallada de una política
-    
-    Returns:
-        dict con métricas completas
-    """
     episode_rewards = []
     episode_lengths = []
     success_count = 0
@@ -247,9 +203,6 @@ def evaluate_policy_detailed(model, env, n_eval_episodes=100, deterministic=True
 
 
 def visualize_episode(model, env, save_video=False, video_path="episode.mp4"):
-    """
-    Visualiza un episodio completo y opcionalmente guarda video
-    """
     obs, info = env.reset()
     done = False
     frames = []
@@ -263,14 +216,14 @@ def visualize_episode(model, env, save_video=False, video_path="episode.mp4"):
         if save_video and frame is not None:
             frames.append(frame)
         
-        # Acción del modelo
+        # Model action
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
         
         print(f"Step {env.steps}: Pos={env.agent_pos}, Action={action}, Reward={reward:.2f}")
     
-    print(f"\nResultado: {'✅ Éxito' if terminated else '❌ Timeout'}")
+    print(f"\nResultado: {'Éxito' if terminated else 'Timeout'}")
     print(f"Pasos totales: {env.steps}")
     print(f"Reward total: {env.total_reward:.2f}")
     
@@ -286,22 +239,10 @@ def visualize_episode(model, env, save_video=False, video_path="episode.mp4"):
             out.write(frame)
         
         out.release()
-        print(f"\n🎥 Video guardado: {video_path}")
+        print(f"\nVideo guardado: {video_path}")
 
 
 def compare_policies(models_dict, env, n_episodes=50):
-    """
-    Compara múltiples políticas
-    
-    Args:
-        models_dict: Dict {nombre: modelo}
-        env: Entorno de evaluación
-        n_episodes: Episodios por modelo
-    
-    Returns:
-        DataFrame con comparación
-    """
-    import pandas as pd
     
     results = []
     
@@ -317,21 +258,8 @@ def compare_policies(models_dict, env, n_episodes=50):
     return df
 
 
-# ============================================
-# UTILIDADES DE CONFIGURACIÓN
-# ============================================
-
+# Configuration utilities
 def create_env_with_wrappers(base_env_fn, wrappers=None):
-    """
-    Crea entorno con wrappers aplicados
-    
-    Args:
-        base_env_fn: Función que crea el entorno base
-        wrappers: Lista de wrappers a aplicar
-    
-    Returns:
-        Entorno con wrappers
-    """
     env = base_env_fn()
     
     if wrappers:
@@ -357,10 +285,6 @@ def get_optimal_n_envs():
     
     return optimal
 
-
-# ============================================
-# MAIN (EJEMPLOS)
-# ============================================
 
 if __name__ == "__main__":
     print("Utilidades de entrenamiento cargadas")

@@ -1,15 +1,3 @@
-"""
-Demo Interactiva de TouristBot
-==============================
-
-Script para demostración interactiva del agente entrenado.
-Permite al usuario ver el agente en acción con diferentes objetivos.
-
-Uso:
-    python demo.py --model models/ppo_basic/best_model.zip
-    python demo.py --model models/ppo_basic/best_model.zip --continuous
-"""
-
 import argparse
 import time
 import numpy as np
@@ -19,39 +7,30 @@ import cv2
 
 
 def print_banner():
-    """Imprime banner de inicio"""
+    """Print startup banner"""
     print("\n" + "="*70)
-    print(" " * 20 + "🌆 TOURISTBOT DEMO 🌆")
+    print(" " * 20 + "TOURISTBOT DEMO ")
     print("="*70 + "\n")
 
 
 def print_menu():
-    """Muestra menú de opciones"""
-    print("\n📋 MENÚ:")
-    print("  1. Episodio con objetivo restaurant")
-    print("  2. Episodio con objetivo museum")
-    print("  3. Episodio aleatorio")
-    print("  4. Comparar 5 episodios")
-    print("  5. Modo continuo (hasta interrumpir)")
-    print("  q. Salir")
+    """Show options menu"""
+    print("\nMENU:")
+    print("  1. Episode with restaurant goal")
+    print("  2. Episode with museum goal")
+    print("  3. Random episode")
+    print("  4. Compare 5 episodes")
+    print("  5. Continuous mode (until interrupted)")
+    print("  q. Exit")
     print()
 
 
-def run_episode(model, goal_type=None, render=True, verbose=True):
-    """
-    Ejecuta un episodio completo
-    
-    Args:
-        model: Modelo entrenado
-        goal_type: Tipo de objetivo o None para aleatorio
-        render: Si mostrar visualización
-        verbose: Si mostrar información detallada
-    
-    Returns:
-        dict con estadísticas del episodio
-    """
+# Function to run complete episode
+def run_episode(model, goal_type=None, render=True, verbose=True, max_steps=None):
+    # Use only restaurant and museum for old models
+    old_places = ["restaurant", "museum"]
     if goal_type is None:
-        goal_type = np.random.choice(PLACE_TYPES)
+        goal_type = np.random.choice(old_places)
     
     env = TouristBotEnv(
         goal_type=goal_type,
@@ -65,24 +44,36 @@ def run_episode(model, goal_type=None, render=True, verbose=True):
     
     if verbose:
         print(f"\n{'='*70}")
-        print(f"🎯 NUEVO EPISODIO")
+        print(f"NEW EPISODE")
         print(f"{'='*70}")
-        print(f"Objetivo: {env.goal_type.upper()} en posición {env.goal_pos}")
-        print(f"Inicio: {env.agent_pos}")
-        print(f"Distancia inicial: {env._manhattan_distance(env.agent_pos, env.goal_pos)} celdas")
+        print(f"Goal: {env.goal_type.upper()} at position {env.goal_pos}")
+        print(f"Start: {env.agent_pos}")
+        print(f"Initial distance: {env._manhattan_distance(env.agent_pos, env.goal_pos)} cells")
         print(f"{'='*70}\n")
     
     trajectory = [env.agent_pos.copy()]
     actions_taken = []
     rewards_received = []
     
-    action_names = ["↑ Arriba", "↓ Abajo", "← Izquierda", "→ Derecha"]
+    action_names = ["↑ Up", "↓ Down", "← Left", "→ Right"]
     
-    while not done:
-        # Predicción del modelo
-        action, _states = model.predict(obs, deterministic=True)
+    # Step limit to avoid infinite loops
+    if max_steps is None:
+        max_steps = env.max_steps + 50
+    
+    steps_taken = 0
+    stuck_counter = 0
+    last_position = env.agent_pos.copy()
+    
+    while not done and steps_taken < max_steps:
+        # Model prediction
+        try:
+            action, _states = model.predict(obs, deterministic=True)
+        except Exception as e:
+            print(f"\nPrediction error: {e}")
+            print("Using random action as fallback")
+            action = env.action_space.sample()
         
-        # Ejecutar acción
         obs, reward, terminated, truncated, info = env.step(action)
         
         trajectory.append(env.agent_pos.copy())
@@ -90,30 +81,49 @@ def run_episode(model, goal_type=None, render=True, verbose=True):
         rewards_received.append(reward)
         
         done = terminated or truncated
+        steps_taken += 1
         
-        # Mostrar información si verbose
-        if verbose and env.steps % 5 == 0:  # Cada 5 pasos
+        # Detect if stuck at same position
+        if env.agent_pos == last_position:
+            stuck_counter += 1
+            if stuck_counter > 20:
+                if verbose:
+                    print(f"\nAgent stuck at {env.agent_pos} for {stuck_counter} steps")
+                # Force termination
+                done = True
+                truncated = True
+        else:
+            stuck_counter = 0
+            last_position = env.agent_pos.copy()
+        
+        # Show info every 5 steps
+        if verbose and env.steps % 5 == 0:
             print(f"Paso {env.steps:3d}: {action_names[action]:12s} | "
                   f"Pos {env.agent_pos} | "
                   f"Dist {info['distance_to_goal']:2d} | "
                   f"Reward {reward:+6.2f}")
         
-        # Renderizar
         if render:
             env.render()
-            time.sleep(0.1)  # Pausa para visualización
+            time.sleep(0.1)
     
-    # Resultado
+    # Result
     if verbose:
         print(f"\n{'='*70}")
-        if terminated:
-            print("🎉 ¡OBJETIVO ALCANZADO!")
+        if terminated and stuck_counter <= 20:
+            print("GOAL REACHED!")
+        elif stuck_counter > 20:
+            print("Agent stuck - Episode terminated")
+        elif steps_taken >= max_steps:
+            print("Safety limit reached (possible loop)")
         else:
-            print("⏰ Tiempo agotado")
+            print("Timeout")
         print(f"{'='*70}")
-        print(f"Pasos totales: {env.steps}")
-        print(f"Reward total: {env.total_reward:.2f}")
-        print(f"Celdas exploradas: {len(env.visited_cells)}")
+        print(f"Total steps: {env.steps}")
+        print(f"Total reward: {env.total_reward:.2f}")
+        print(f"Cells explored: {len(env.visited_cells)}")
+        if stuck_counter > 0:
+            print(f"Steps without movement: {stuck_counter}")
         print(f"{'='*70}\n")
     
     env.close()
@@ -130,47 +140,42 @@ def run_episode(model, goal_type=None, render=True, verbose=True):
 
 
 def compare_episodes(model, n_episodes=5):
-    """
-    Ejecuta múltiples episodios y compara resultados
-    """
+    """Run multiple episodes and compare results"""
     print(f"\n{'='*70}")
-    print(f"📊 COMPARANDO {n_episodes} EPISODIOS")
+    print(f"COMPARING {n_episodes} EPISODES")
     print(f"{'='*70}\n")
     
     results = []
     
     for i in range(n_episodes):
-        print(f"\n--- Episodio {i+1}/{n_episodes} ---")
+        print(f"\n--- Episode {i+1}/{n_episodes} ---")
         stats = run_episode(model, goal_type=None, render=False, verbose=False)
         results.append(stats)
         
-        result_icon = "✅" if stats["success"] else "❌"
-        print(f"{result_icon} {stats['steps']:2d} pasos | "
+        print(f" {stats['steps']:2d} steps | "
               f"Reward: {stats['total_reward']:6.2f} | "
-              f"Exploradas: {stats['cells_explored']:2d} celdas")
+              f"Explored: {stats['cells_explored']:2d} cells")
     
-    # Estadísticas agregadas
+    # Aggregate statistics
     success_count = sum(1 for r in results if r["success"])
     avg_steps = np.mean([r["steps"] for r in results])
     avg_reward = np.mean([r["total_reward"] for r in results])
     
     print(f"\n{'='*70}")
-    print(f"📈 ESTADÍSTICAS AGREGADAS")
+    print(f"AGGREGATE STATISTICS")
     print(f"{'='*70}")
-    print(f"Tasa de éxito: {success_count}/{n_episodes} ({success_count/n_episodes*100:.1f}%)")
-    print(f"Pasos promedio: {avg_steps:.1f} ± {np.std([r['steps'] for r in results]):.1f}")
-    print(f"Reward promedio: {avg_reward:.2f} ± {np.std([r['total_reward'] for r in results]):.2f}")
+    print(f"Success rate: {success_count}/{n_episodes} ({success_count/n_episodes*100:.1f}%)")
+    print(f"Average steps: {avg_steps:.1f} ± {np.std([r['steps'] for r in results]):.1f}")
+    print(f"Average reward: {avg_reward:.2f} ± {np.std([r['total_reward'] for r in results]):.2f}")
     print(f"{'='*70}\n")
 
 
 def continuous_mode(model):
-    """
-    Modo continuo: ejecuta episodios hasta interrumpir
-    """
+    """Continuous mode: run episodes until interrupted"""
     print(f"\n{'='*70}")
-    print("🔄 MODO CONTINUO")
+    print("CONTINUOUS MODE")
     print("{'='*70}")
-    print("Presiona Ctrl+C para detener\n")
+    print("Press Ctrl+C to stop\n")
     
     episode_count = 0
     success_count = 0
@@ -179,7 +184,7 @@ def continuous_mode(model):
         while True:
             episode_count += 1
             print(f"\n{'─'*70}")
-            print(f"Episodio #{episode_count}")
+            print(f"Episode #{episode_count}")
             print(f"{'─'*70}")
             
             stats = run_episode(model, goal_type=None, render=True, verbose=False)
@@ -187,49 +192,47 @@ def continuous_mode(model):
             if stats["success"]:
                 success_count += 1
             
-            result = "✅ Éxito" if stats["success"] else "❌ Timeout"
-            print(f"{result} | {stats['steps']} pasos | Reward: {stats['total_reward']:.2f}")
-            print(f"Tasa de éxito acumulada: {success_count}/{episode_count} ({success_count/episode_count*100:.1f}%)")
+            result = "Success" if stats["success"] else "Timeout"
+            print(f"{result} | {stats['steps']} steps | Reward: {stats['total_reward']:.2f}")
+            print(f"Cumulative success rate: {success_count}/{episode_count} ({success_count/episode_count*100:.1f}%)")
             
-            time.sleep(1)  # Pausa entre episodios
+            time.sleep(1)
             
     except KeyboardInterrupt:
         print(f"\n\n{'='*70}")
-        print("🛑 Modo continuo detenido")
+        print("Continuous mode stopped")
         print(f"{'='*70}")
-        print(f"Episodios ejecutados: {episode_count}")
-        print(f"Tasa de éxito final: {success_count}/{episode_count} ({success_count/episode_count*100:.1f}%)")
+        print(f"Episodes run: {episode_count}")
+        print(f"Final success rate: {success_count}/{episode_count} ({success_count/episode_count*100:.1f}%)")
         print(f"{'='*70}\n")
 
 
 def interactive_demo(model_path):
-    """
-    Demo interactiva con menú
-    """
+    """Interactive demo with menu"""
     print_banner()
     
-    # Cargar modelo
-    print("📦 Cargando modelo...")
+    # Load model
+    print("📦 Loading model...")
     try:
         model = PPO.load(model_path)
-        print(f"✅ Modelo cargado: {model_path}\n")
+        print(f"Model loaded: {model_path}\n")
     except Exception as e:
-        print(f"❌ Error cargando modelo: {e}")
+        print(f"Error loading model: {e}")
         return
     
-    # Loop del menú
+    # Menu loop
     while True:
         print_menu()
-        choice = input("Selecciona una opción: ").strip().lower()
+        choice = input("Select an option: ").strip().lower()
         
         if choice == "1":
-            run_episode(model, goal_type="restaurant", render=True, verbose=True)
+            run_episode(model, goal_type="restaurant", render=True, verbose=True, max_steps=250)
         
         elif choice == "2":
-            run_episode(model, goal_type="museum", render=True, verbose=True)
+            run_episode(model, goal_type="museum", render=True, verbose=True, max_steps=250)
         
         elif choice == "3":
-            run_episode(model, goal_type=None, render=True, verbose=True)
+            run_episode(model, goal_type=None, render=True, verbose=True, max_steps=250)
         
         elif choice == "4":
             compare_episodes(model, n_episodes=5)
@@ -238,38 +241,35 @@ def interactive_demo(model_path):
             continuous_mode(model)
         
         elif choice == "q":
-            print("\n👋 ¡Hasta luego!\n")
+            print("\nGoodbye!\n")
             break
         
         else:
-            print("\n❌ Opción inválida. Intenta de nuevo.")
+            print("\nInvalid option. Try again.")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Demo interactiva de TouristBot")
     parser.add_argument("--model", type=str, required=True, help="Ruta al modelo (.zip)")
     parser.add_argument("--continuous", action="store_true", help="Modo continuo directo")
-    parser.add_argument("--episodes", type=int, default=1, help="Número de episodios (si no es interactivo)")
-    parser.add_argument("--goal", type=str, choices=PLACE_TYPES, help="Tipo de objetivo")
+    parser.add_argument("--episodes", type=int, default=1, help="Number of episodes (if not interactive)")
+    parser.add_argument("--goal", type=str, choices=PLACE_TYPES, help="Goal type")
     
     args = parser.parse_args()
     
     if args.continuous:
-        # Modo continuo directo
         print_banner()
-        print(f"Cargando modelo: {args.model}")
+        print(f"Loading model: {args.model}")
         model = PPO.load(args.model)
         continuous_mode(model)
     
     elif args.episodes > 1:
-        # Múltiples episodios no interactivos
         print_banner()
-        print(f"Cargando modelo: {args.model}")
+        print(f"Loading model: {args.model}")
         model = PPO.load(args.model)
         compare_episodes(model, n_episodes=args.episodes)
     
     else:
-        # Modo interactivo (default)
         interactive_demo(args.model)
 
 

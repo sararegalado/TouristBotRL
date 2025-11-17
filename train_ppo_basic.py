@@ -1,14 +1,3 @@
-"""
-Entrenamiento básico de TouristBot con PPO
-===========================================
-
-Script para entrenar un agente con Proximal Policy Optimization (PPO)
-usando Stable-Baselines3.
-
-Uso:
-    python train_ppo_basic.py
-"""
-
 import os
 import numpy as np
 from datetime import datetime
@@ -22,12 +11,9 @@ import gymnasium as gym
 from touristbot_env import TouristBotEnv, PLACE_TYPES
 
 
-# ============================================
-# CONFIGURACIÓN DEL ENTRENAMIENTO
-# ============================================
-
+# Configuration
 CONFIG = {
-    # Entorno
+    # Env
     "use_partial_obs": True,
     "view_size": 5,
     "n_envs": 4,  # Entrenamiento paralelo
@@ -40,7 +26,7 @@ CONFIG = {
     "gamma": 0.99,
     "gae_lambda": 0.95,
     "clip_range": 0.2,
-    "ent_coef": 0.01,  # Coeficiente de entropía para exploración
+    "ent_coef": 0.01,
     
     # Entrenamiento
     "total_timesteps": 200000,
@@ -53,15 +39,8 @@ CONFIG = {
     "tensorboard_log": "./tensorboard/ppo_basic/",
 }
 
-
+# Function for creating environment
 def make_env(rank, seed=0):
-    """
-    Crea una función para crear el entorno (útil para paralelización)
-    
-    Args:
-        rank: ID del entorno (para logging)
-        seed: Seed base para reproducibilidad
-    """
     def _init():
         env = TouristBotEnv(
             use_partial_obs=CONFIG["use_partial_obs"],
@@ -73,15 +52,12 @@ def make_env(rank, seed=0):
         return env
     return _init
 
-
+# Basic training with PPO
 def train_ppo_basic():
-    """
-    Entrenamiento básico con PPO
-    """
     print("="*70)
-    print("🚀 ENTRENAMIENTO PPO BÁSICO - TOURISTBOT")
+    print("ENTRENAMIENTO PPO BÁSICO - TOURISTBOT")
     print("="*70)
-    print(f"\n⚙️  Configuración:")
+    print(f"\nConfiguración:")
     print(f"   - Vista parcial: {CONFIG['use_partial_obs']} ({CONFIG['view_size']}x{CONFIG['view_size']})")
     print(f"   - Entornos paralelos: {CONFIG['n_envs']}")
     print(f"   - Total timesteps: {CONFIG['total_timesteps']:,}")
@@ -94,15 +70,15 @@ def train_ppo_basic():
     os.makedirs(CONFIG["tensorboard_log"], exist_ok=True)
     
     # Crear entornos vectorizados para entrenamiento
-    print(f"\n📦 Creando {CONFIG['n_envs']} entornos vectorizados...")
+    print(f"\nCreando {CONFIG['n_envs']} entornos vectorizados...")
     env = make_vec_env(
         make_env(rank=0),
         n_envs=CONFIG["n_envs"],
         seed=42
     )
     
-    # Entorno de evaluación separado
-    print(f"📊 Creando entorno de evaluación...")
+    # Separate evaluation environment
+    print(f"Creando entorno de evaluación...")
     eval_env = make_vec_env(
         make_env(rank=100),
         n_envs=1,
@@ -127,7 +103,7 @@ def train_ppo_basic():
     )
     
     # Crear modelo PPO
-    print(f"\n🤖 Creando modelo PPO...")
+    print(f"\nCreando modelo PPO...")
     model = PPO(
         "MlpPolicy",
         env,
@@ -141,10 +117,10 @@ def train_ppo_basic():
         ent_coef=CONFIG["ent_coef"],
         verbose=1,
         tensorboard_log=CONFIG["tensorboard_log"],
-        device="auto"  # Usa GPU si está disponible
+        device="auto"
     )
     
-    print(f"\n📊 Arquitectura de la política:")
+    print(f"\nArquitectura de la política:")
     print(f"   - Input: {env.observation_space.shape[0]} (observación)")
     print(f"   - Output: {env.action_space.n} (acciones)")
     print(f"   - Policy: MLP (Red neuronal fully-connected)")
@@ -167,7 +143,7 @@ def train_ppo_basic():
         duration = timestamp_end - timestamp_start
         
         print(f"\n{'='*70}")
-        print(f"✅ ENTRENAMIENTO COMPLETADO")
+        print(f"ENTRENAMIENTO COMPLETADO")
         print(f"{'='*70}")
         print(f"   Duración: {duration}")
         print(f"   Timesteps: {CONFIG['total_timesteps']:,}")
@@ -178,7 +154,7 @@ def train_ppo_basic():
         print(f"   Modelo guardado: {final_model_path}")
         
     except KeyboardInterrupt:
-        print(f"\n⚠️  Entrenamiento interrumpido por el usuario")
+        print(f"\nEntrenamiento interrumpido por el usuario")
         interrupted_model_path = os.path.join(CONFIG["model_dir"], "ppo_touristbot_interrupted")
         model.save(interrupted_model_path)
         print(f"   Modelo guardado: {interrupted_model_path}")
@@ -200,7 +176,7 @@ def test_trained_model(model_path, n_episodes=5, render=True):
         render: Si mostrar visualización
     """
     print(f"\n{'='*70}")
-    print(f"🧪 PROBANDO MODELO ENTRENADO")
+    print(f"PROBANDO MODELO ENTRENADO")
     print(f"{'='*70}")
     print(f"   Modelo: {model_path}")
     print(f"   Episodios: {n_episodes}\n")
@@ -241,13 +217,13 @@ def test_trained_model(model_path, n_episodes=5, render=True):
             if render:
                 env.render()
         
-        # Estadísticas
+        # Statistics
         if terminated:
             stats["success"] += 1
-            result = "✅ Éxito"
+            result = "Éxito"
         else:
             stats["timeout"] += 1
-            result = "❌ Timeout"
+            result = "Timeout"
         
         stats["steps"].append(steps)
         stats["rewards"].append(episode_reward)
@@ -260,7 +236,7 @@ def test_trained_model(model_path, n_episodes=5, render=True):
     
     # Resumen
     print(f"\n{'='*70}")
-    print(f"📊 ESTADÍSTICAS")
+    print(f"ESTADÍSTICAS")
     print(f"{'='*70}")
     print(f"   Tasa de éxito: {stats['success']}/{n_episodes} ({stats['success']/n_episodes*100:.1f}%)")
     print(f"   Pasos promedio: {np.mean(stats['steps']):.1f} ± {np.std(stats['steps']):.1f}")

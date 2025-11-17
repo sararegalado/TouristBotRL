@@ -1,19 +1,3 @@
-"""
-Análisis y visualización de resultados de entrenamiento
-=======================================================
-
-Herramientas para analizar y visualizar:
-- Curvas de aprendizaje
-- Comparación de modelos
-- Matrices de confusión
-- Mapas de calor de acciones
-
-Uso:
-    python analyze_results.py --plot-learning
-    python analyze_results.py --compare-models
-    python analyze_results.py --visualize-policy modelo.zip
-"""
-
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -28,12 +12,9 @@ import json
 plt.style.use('seaborn-v0_8-darkgrid')
 sns.set_palette("husl")
 
-
+# Plotear curvas de aprendizaje desde logs del monitor
 def plot_learning_curves(log_dir, save_path="./plots/learning_curves.png"):
-    """
-    Plotea curvas de aprendizaje desde logs de Monitor
-    """
-    print(f"📊 Generando curvas de aprendizaje desde {log_dir}...")
+    print(f"Generando curvas de aprendizaje desde {log_dir}...")
     
     try:
         df = load_results(log_dir)
@@ -70,7 +51,7 @@ def plot_learning_curves(log_dir, save_path="./plots/learning_curves.png"):
         axes[1, 0].set_title('Tiempo Acumulado de Entrenamiento')
         axes[1, 0].grid(True, alpha=0.3)
         
-        # Distribución de rewards
+        # Reward distribution
         axes[1, 1].hist(df['r'], bins=50, color='purple', alpha=0.7, edgecolor='black')
         axes[1, 1].axvline(df['r'].mean(), color='red', linestyle='--', label=f'Media: {df["r"].mean():.2f}')
         axes[1, 1].set_xlabel('Reward')
@@ -82,18 +63,18 @@ def plot_learning_curves(log_dir, save_path="./plots/learning_curves.png"):
         plt.tight_layout()
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✅ Gráfico guardado: {save_path}")
+        print(f"Gráfico guardado: {save_path}")
         plt.show()
         
     except Exception as e:
-        print(f"❌ Error generando curvas: {e}")
+        print(f"Error generando curvas: {e}")
 
 
 def compare_models(results_json="./models/comparison/results.json", save_path="./plots/model_comparison.png"):
     """
     Compara rendimiento de diferentes modelos
     """
-    print(f"⚖️  Comparando modelos desde {results_json}...")
+    print(f"Comparando modelos desde {results_json}...")
     
     try:
         with open(results_json, 'r') as f:
@@ -112,11 +93,11 @@ def compare_models(results_json="./models/comparison/results.json", save_path=".
                 mean_steps.append(stats['mean_steps'])
                 mean_rewards.append(stats['mean_reward'])
         
-        # Crear gráfico
+        # Create graph
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
         fig.suptitle('Comparación de Algoritmos', fontsize=16, fontweight='bold')
         
-        # Tasa de éxito
+        # Success rate
         axes[0].bar(models, success_rates, color=['#1f77b4', '#ff7f0e', '#2ca02c'])
         axes[0].set_ylabel('Tasa de Éxito (%)')
         axes[0].set_title('Tasa de Éxito por Algoritmo')
@@ -141,26 +122,26 @@ def compare_models(results_json="./models/comparison/results.json", save_path=".
         plt.tight_layout()
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✅ Gráfico guardado: {save_path}")
+        print(f"Gráfico guardado: {save_path}")
         plt.show()
         
     except Exception as e:
-        print(f"❌ Error comparando modelos: {e}")
+        print(f"Error comparando modelos: {e}")
 
 
 def visualize_policy(model_path, n_episodes=10, save_path="./plots/policy_heatmap.png"):
     """
     Visualiza la política del agente como mapa de calor de acciones
     """
-    print(f"🗺️  Visualizando política de {model_path}...")
+    print(f"Visualizando política de {model_path}...")
     
     try:
         model = PPO.load(model_path)
         env = TouristBotEnv(use_partial_obs=False, render_mode=None)
         
-        # Matriz para contar visitas a cada posición
+        # Matrix to count visits to each position
         visit_count = np.zeros((10, 10))
-        action_count = np.zeros((10, 10, 4))  # [x, y, acción]
+        action_count = np.zeros((10, 10, 4))
         
         for episode in range(n_episodes):
             obs, info = env.reset()
@@ -178,7 +159,7 @@ def visualize_policy(model_path, n_episodes=10, save_path="./plots/policy_heatma
         
         env.close()
         
-        # Crear visualización
+        # Create visualization
         fig, axes = plt.subplots(1, 2, figsize=(14, 6))
         fig.suptitle('Análisis de Política', fontsize=16, fontweight='bold')
         
@@ -188,7 +169,7 @@ def visualize_policy(model_path, n_episodes=10, save_path="./plots/policy_heatma
         axes[0].set_xlabel('X')
         axes[0].set_ylabel('Y')
         
-        # Acción preferida por celda
+        # Preferred action per cell
         preferred_action = np.argmax(action_count, axis=2)
         action_names = ['↑', '↓', '←', '→']
         
@@ -210,18 +191,15 @@ def visualize_policy(model_path, n_episodes=10, save_path="./plots/policy_heatma
         plt.tight_layout()
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✅ Gráfico guardado: {save_path}")
+        print(f"Gráfico guardado: {save_path}")
         plt.show()
         
     except Exception as e:
-        print(f"❌ Error visualizando política: {e}")
+        print(f"Error visualizando política: {e}")
 
-
+# Visualiza las trayectorias del agente en el grid
 def analyze_trajectories(model_path, n_episodes=5, save_path="./plots/trajectories.png"):
-    """
-    Visualiza las trayectorias del agente en el grid
-    """
-    print(f"🛤️  Analizando trayectorias de {model_path}...")
+    print(f"Analizando trayectorias de {model_path}...")
     
     try:
         model = PPO.load(model_path)
@@ -278,19 +256,16 @@ def analyze_trajectories(model_path, n_episodes=5, save_path="./plots/trajectori
         plt.tight_layout()
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"✅ Gráfico guardado: {save_path}")
+        print(f"Gráfico guardado: {save_path}")
         plt.show()
         
     except Exception as e:
-        print(f"❌ Error analizando trayectorias: {e}")
+        print(f"Error analizando trayectorias: {e}")
 
-
+# Generar reporte con todas las visualizaciones
 def generate_full_report(model_path, log_dir):
-    """
-    Genera un reporte completo con todas las visualizaciones
-    """
     print("="*70)
-    print("📈 GENERANDO REPORTE COMPLETO")
+    print("GENERANDO REPORTE COMPLETO")
     print("="*70)
     
     os.makedirs("./plots/", exist_ok=True)
@@ -304,7 +279,7 @@ def generate_full_report(model_path, log_dir):
     print("\n3. Análisis de trayectorias...")
     analyze_trajectories(model_path)
     
-    print("\n✅ Reporte completo generado en ./plots/")
+    print("\nReporte completo generado en ./plots/")
 
 
 if __name__ == "__main__":

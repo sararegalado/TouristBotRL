@@ -1,50 +1,49 @@
-# 🌆 TouristBot - Agente de Navegación con RL
+# 🌆 TouristBot - Navigation Agent with RL
 
-Agente que aprende a navegar por una ciudad 2D para llegar a lugares específicos (restaurantes, museos) usando Reinforcement Learning.
+Agent that learns to navigate a 2D city to reach specific places (restaurants, museums, shops, cinemas, parks) using Reinforcement Learning.
 
-```
-
-## 📁 Estructura del Proyecto
+## 📁 Project Structure
 
 ```
-proyecto/
-├── touristbot_env.py       # Entorno (Grid 10x10, vista parcial 5x5)
-├── train_ppo_basic.py      # Entrenamiento básico PPO
-├── train_advanced.py       # Curriculum + Comparación + Tuning
-├── analyze_results.py      # Análisis y visualización
-├── demo.py                 # Demo interactiva
-├── utils.py                # Utilidades (wrappers, callbacks)
+project/
+├── touristbot_env.py       # Environment (20x20 grid, partial view 5x5)
+├── train_ppo_basic.py      # Basic PPO training
+├── train_advanced.py       # Curriculum + Comparison + Tuning
+├── analyze_results.py      # Analysis and visualization
+├── demo.py                 # Interactive demo
+├── utils.py                # Utilities (wrappers, callbacks)
+├── show_places.py          # Show all places on map
 ```
 
-## 🎮 Uso Rápido
+## 🎮 Quick Start
 
-### 1. Entrenar modelo básico
+### 1. Train basic model
 
 ```bash
 python train_ppo_basic.py --train
 ```
 
-### 2. Probar modelo entrenado
+### 2. Test trained model
 
 ```bash
 python demo.py --model models/ppo_basic/ppo_touristbot_final.zip
 ```
 
-### 3. Ver progreso en TensorBoard
+### 3. View progress in TensorBoard
 
 ```bash
 tensorboard --logdir ./tensorboard/ppo_basic/
 ```
 
-## 🎓 Técnicas Avanzadas
+## 🎓 Advanced Techniques
 
 ### Curriculum Learning
 ```bash
 python train_advanced.py --mode curriculum
 ```
-Entrena progresivamente reduciendo tiempo disponible (150→100→75 pasos).
+Progressive training by reducing available time (150→100→75 steps).
 
-### Comparar Algoritmos (PPO vs SAC vs DQN)
+### Compare Algorithms (PPO vs SAC vs DQN)
 ```bash
 python train_advanced.py --mode compare --timesteps 100000
 ```
@@ -54,61 +53,46 @@ python train_advanced.py --mode compare --timesteps 100000
 python train_advanced.py --mode tune --trials 50
 ```
 
-## 📊 Análisis de Resultados
+## 📊 Results Analysis
 
 ```bash
-# Curvas de aprendizaje
+# Learning curves
 python analyze_results.py --plot-learning logs/ppo_basic/
 
-# Visualizar política
+# Visualize policy
 python analyze_results.py --visualize-policy models/ppo_basic/best_model.zip
 
-# Reporte completo
+# Full report
 python analyze_results.py --full-report models/ppo_basic/best_model.zip logs/ppo_basic/
 ```
 
-## 🎯 Características del Entorno
-
-- **Grid**: 20x20 celdas (ciudad expandida)
-- **Estructura**: Ciudad con calles estilo Manhattan
-  - Calles transitables cada 4 celdas (horizontal y vertical)
-  - Edificios bloqueados entre calles
-  - 204 celdas transitables, 196 bloqueadas
-- **Observación**: Vista parcial 5x5 (28 valores)
-  - Codificación: 0=edificio, 1=calle, 2=restaurant, 3=museum, 4=agente
-- **Acciones**: 4 direccionales (↑↓←→)
-  - Solo se puede mover por calles, los edificios bloquean el movimiento
-- **Reward shaping**: Potencial basado en distancia + exploration bonus
-- **Tiempo máximo**: 200 pasos (aumentado por el tamaño del grid)
-- **Compatible**: Gymnasium, Stable-Baselines3
-
-### 🏙️ Visualizar la Estructura de Ciudad
+## 🏙️ Visualize City Structure
 
 ```bash
-python demo_city.py
+python show_places.py
 ```
-Este script muestra el mapa de calles y edificios tanto en texto como visualmente.
+This script shows the map of streets, buildings, and all places both in text and visually.
 
-## 📈 Configuración
+## 📈 Configuration
 
-Editar `CONFIG` en `train_ppo_basic.py`:
+Edit `CONFIG` in `train_ppo_basic.py`:
 
 ```python
 CONFIG = {
-    "use_partial_obs": True,    # Vista parcial
-    "view_size": 5,              # Tamaño vista
-    "n_envs": 4,                 # Entornos paralelos
+    "use_partial_obs": True,    # Partial view
+    "view_size": 5,              # View size
+    "n_envs": 4,                 # Parallel environments
     "total_timesteps": 200000,   # Timesteps
     "learning_rate": 3e-4,       # Learning rate
 }
 ```
 
-## 🏆 Resultados Esperados
+## 🏆 Expected Results
 
-- **Tasa de éxito**: 70-95%
-- **Pasos promedio**: 10-25
-- **Tiempo entrenamiento**: 10-30 min (CPU)
+- **Success rate**: 70-95%
+- **Average steps**: 10-25
+- **Training time**: 10-30 min (CPU)
 
 ---
 
-**Autoras**: Sara Regalado | Zaloa Fernandez | Universidad de Deusto 2025-2026
+**Authors**: Sara Regalado | Zaloa Fernandez | Universidad de Deusto 2025-2026
