@@ -1,79 +1,168 @@
-# 🌆 TouristBot - Navigation Agent with RL
+# 🌆 TouristBot - Navegación con RL y Lenguaje Natural
 
-Agent that learns to navigate a 2D city to reach specific places (restaurants, museums, shops, cinemas, parks) using Reinforcement Learning.
+Agente que navega por una ciudad 2D hacia lugares específicos (restaurantes, museos, tiendas, cines) usando Reinforcement Learning y procesamiento de lenguaje natural (Zero-Shot Classification).
 
-## 📁 Project Structure
+## 🚀 Inicio Rápido
 
-```
-project/
-├── touristbot_env.py       # Environment (20x20 grid, partial view 5x5)
-├── train_ppo_basic.py      # Basic PPO training
-├── train_advanced.py       # Curriculum + Comparison + Tuning
-├── analyze_results.py      # Analysis and visualization
-├── demo.py                 # Interactive demo
-├── utils.py                # Utilities (wrappers, callbacks)
-├── show_places.py          # Show all places on map
+### Ejecutar la aplicación (modo interactivo)
+
+```bash
+python touristbot_app.py
 ```
 
-## 🎮 Quick Start
+Esto inicia la interfaz gráfica donde puedes:
+- Presionar **'T'** para escribir tu destino en lenguaje natural
+- El agente navegará automáticamente usando el modelo RL entrenado
+- **ESC** o botón **EXIT** para salir
 
-### 1. Train basic model
+### Ejemplos de entrada:
+- "Quiero comer algo"
+- "Necesito ir a una tienda"
+- "Llévame al museo"
+- "Busca un cine"
 
+## 📁 Estructura del Proyecto
+
+```
+TouristBot_RL/
+├── touristbot_app.py       # 🎯 APLICACIÓN PRINCIPAL
+├── touristbot_env.py       # Entorno RL (ciudad 20x20, vista parcial 5x5)
+├── train_ppo_basic.py      # Entrenamiento PPO básico
+├── train_advanced.py       # Curriculum learning y comparación
+├── analyze_results.py      # Análisis y visualización
+├── utils.py                # Utilidades (wrappers, callbacks)
+├── requirements.txt        # Dependencias
+└── models/                 # Modelos entrenados
+    └── ppo_basic/
+        └── best_model.zip  # Mejor modelo
+```
+
+## 🎮 Modos de Uso
+
+### 1. Modo Interactivo (por defecto)
+
+```bash
+python touristbot_app.py
+```
+
+### 2. Episodio único con texto
+
+```bash
+python touristbot_app.py --mode single --text "Quiero ir al museo"
+```
+
+### 3. Usar modelo específico
+
+```bash
+python touristbot_app.py --model models/ppo_basic/best_model.zip
+```
+
+### 4. Sin visualización (solo métricas)
+
+```bash
+python touristbot_app.py --mode single --text "Busca un restaurante" --no-viz
+```
+
+## 🧠 Cómo Funciona
+
+### 1. **Procesamiento de Lenguaje Natural (Zero-Shot)**
+   - Usa un modelo BERT en español para clasificar la intención del usuario
+   - Mapea texto libre a categorías: restaurante, museo, tienda, cine
+   - No requiere entrenamiento adicional
+
+### 2. **Navegación con RL**
+   - Agente PPO entrenado para navegar eficientemente
+   - Vista parcial 5x5 para simular visión limitada
+   - Recompensa basada en distancia + penalización por tiempo
+
+### 3. **Interfaz Interactiva**
+   - Visualización en tiempo real con OpenCV
+   - Campo de texto para entrada en lenguaje natural
+   - Botón EXIT y navegación con teclado
+
+## 🎓 Entrenamiento (Opcional)
+
+Si quieres entrenar tu propio modelo:
+
+### Entrenamiento básico
 ```bash
 python train_ppo_basic.py --train
 ```
-
-### 2. Test trained model
-
-```bash
-python demo.py --model models/ppo_basic/ppo_touristbot_final.zip
-```
-
-### 3. View progress in TensorBoard
-
-```bash
-tensorboard --logdir ./tensorboard/ppo_basic/
-```
-
-## 🎓 Advanced Techniques
 
 ### Curriculum Learning
 ```bash
 python train_advanced.py --mode curriculum
 ```
-Progressive training by reducing available time (150→100→75 steps).
 
-### Compare Algorithms (PPO vs SAC vs DQN)
+### Comparar algoritmos (PPO vs SAC vs DQN)
 ```bash
 python train_advanced.py --mode compare --timesteps 100000
 ```
 
-### Hyperparameter Tuning (Optuna)
+### Optimización de hiperparámetros
 ```bash
 python train_advanced.py --mode tune --trials 50
 ```
 
-## 📊 Results Analysis
+## 📊 Análisis de Resultados
 
 ```bash
-# Learning curves
+# Curvas de aprendizaje
 python analyze_results.py --plot-learning logs/ppo_basic/
 
-# Visualize policy
+# Visualizar política
 python analyze_results.py --visualize-policy models/ppo_basic/best_model.zip
 
-# Full report
+# Reporte completo
 python analyze_results.py --full-report models/ppo_basic/best_model.zip logs/ppo_basic/
 ```
 
-## 🏙️ Visualize City Structure
+## 🔧 Configuración
 
+### Requisitos
 ```bash
-python show_places.py
+pip install -r requirements.txt
 ```
-This script shows the map of streets, buildings, and all places both in text and visually.
 
-## 📈 Configuration
+Principales dependencias:
+- `stable-baselines3`: Algoritmos RL
+- `gymnasium`: API de entornos
+- `transformers`: Modelos NLP (Zero-Shot)
+- `opencv-python`: Visualización
+- `torch`: Backend para NLP
+
+### Variables de entorno (touristbot_env.py)
+- `GRID_SIZE`: Tamaño del grid (20x20)
+- `CELL_SIZE`: Tamaño de cada celda en píxeles (30)
+- `view_size`: Tamaño de vista parcial (5x5)
+- `max_steps`: Pasos máximos por episodio (150)
+
+## 🎯 Características Principales
+
+✅ **Procesamiento de Lenguaje Natural**
+- Zero-shot classification con BERT en español
+- Sin necesidad de datos de entrenamiento adicionales
+- Mapeo automático de intenciones a lugares
+
+✅ **Reinforcement Learning**
+- Algoritmo PPO optimizado
+- Vista parcial para mayor realismo
+- Curriculum learning disponible
+
+✅ **Interfaz Gráfica Interactiva**
+- Visualización en tiempo real
+- Campo de texto para entrada natural
+- Botones interactivos (Exit, etc.)
+
+✅ **Modelos Pre-entrenados**
+- Listo para usar sin entrenar
+- Múltiples checkpoints disponibles
+
+## 📝 Notas
+
+- Los archivos `demo*.py` y `test_*.py` son legacy y pueden ignorarse
+- Usa solo `touristbot_app.py` para la aplicación principal
+- El modelo zero-shot se carga automáticamente la primera vez (puede tardar unos segundos)
 
 Edit `CONFIG` in `train_ppo_basic.py`:
 

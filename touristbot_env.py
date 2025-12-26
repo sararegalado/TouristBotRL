@@ -5,9 +5,11 @@ import cv2
 import random
 import time
 from collections import deque
+from transformers import pipeline
 
-# Configuration
+# 20 x 20 cell city
 GRID_SIZE = 20
+# 30 pixel cell size
 CELL_SIZE = 30
 TABLE_SIZE = GRID_SIZE * CELL_SIZE
 
@@ -28,25 +30,43 @@ COLORS = {
 # Place types available in the city
 PLACE_TYPES = ["restaurant", "museum", "shop", "cinema", "park"]
 
+# Zero-shot classification labels
+PLACE_LABELS = {
+    "restaurant": "restaurant, food, eat, dining, lunch, dinner, cafe",
+    "museum": "museum, art, culture, exhibition, history, gallery",
+    "shop": "shop, shopping, store, buy, market, mall",
+    "cinema": "cinema, movie, film, theater, watch",
+    "park": "park, garden, nature, outdoor, green space"
+}
+
 class TouristBotEnv(gym.Env):
     metadata = {
         'render_modes': ['human'],
         'render_fps': 10
     }
 
-    def __init__(self, goal_type="restaurant", render_mode=None, use_partial_obs=True, view_size=5):
+    def __init__(self, goal_type="restaurant", render_mode=None, use_partial_obs=True, view_size=5, use_nlp=False):
         super(TouristBotEnv, self).__init__()
         
         self.render_mode = render_mode
         self.use_partial_obs = use_partial_obs
         self.view_size = view_size
+        self.use_nlp = use_nlp
+        
+        # Initialize zero-shot classifier if NLP is enabled
+        if self.use_nlp:
+            print("Loading zero-shot classification model...")
+            self.nlp_classifier = pipeline(
+                "zero-shot-classification",
+                model="facebook/bart-large-mnli"
+            )
+            print("Model loaded successfully!")
         
         # Action space: 4 directional movements (up, down, left, right)
         self.action_space = spaces.Discrete(4)
         
         # Observation space depends on mode
         if use_partial_obs:
-            # Partial view: grid + goal info (encoding: 0=building, 1=street, 2-6=places, 7=agent)
             obs_size = view_size * view_size + 3
             self.observation_space = spaces.Box(
                 low=-GRID_SIZE,
@@ -55,7 +75,6 @@ class TouristBotEnv(gym.Env):
                 dtype=np.float32
             )
         else:
-            # Full observation: [agent_x, agent_y, goal_x, goal_y, goal_type]
             self.observation_space = spaces.Box(
                 low=0,
                 high=GRID_SIZE,
@@ -70,11 +89,25 @@ class TouristBotEnv(gym.Env):
         self.places = {}
         self.park_area = []
         
-        # City structure (0=building blocked, 1=street walkable)
+        # City structure
         self.city_map = self._generate_city_map()
         
         # Visualization
         self.img = np.zeros((TABLE_SIZE, TABLE_SIZE, 3), dtype='uint8')
+        
+        # NLP input window
+        self.nlp_input = ""
+        self.waiting_for_input = True if use_nlp else False
+        self.text_input_active = False
+        self.current_text_input = ""
+        
+        # Exit button state
+        self.exit_button_hovered = False
+        self.exit_requested = False
+        
+        # Navigation control - solo moverse con instrucciones
+        self.navigating = False  # True cuando está ejecutando navegación
+        self.new_instruction_received = False  # True cuando hay nueva instrucción
         
         # Metrics
         self.steps = 0
@@ -82,31 +115,186 @@ class TouristBotEnv(gym.Env):
         self.total_reward = 0
         self.visited_cells = set()
         
-        print("TouristBot Environment v2.0 initialized")
+        print("TouristBot Environment v2.1 initialized")
         print(f"   Grid: {GRID_SIZE}x{GRID_SIZE}")
         print(f"   View: {'Partial ' + str(view_size) + 'x' + str(view_size) if use_partial_obs else 'Full'}")
-        print(f"   Structure: City with streets")
+        print(f"   NLP: {'Enabled' if use_nlp else 'Disabled'}")
         print(f"   Initial goal: {goal_type}")
+
+    def classify_intent(self, text):
+        """Use zero-shot classification to determine user intent"""
+        if not self.use_nlp:
+            print("NLP is not enabled. Using default goal.")
+            return self.goal_type
+        
+        print(f"\nClassifying intent: '{text}'")
+        
+        # Prepare candidate labels
+        candidate_labels = list(PLACE_TYPES)
+        
+        # Run zero-shot classification
+        result = self.nlp_classifier(
+            text,
+            candidate_labels,
+            multi_label=False
+        )
+        
+        # Get best prediction
+        predicted_goal = result['labels'][0]
+        confidence = result['scores'][0]
+        
+        print(f"Predicted goal: {predicted_goal} (confidence: {confidence:.2f})")
+        print(f"All scores: {dict(zip(result['labels'], result['scores']))}")
+        
+        return predicted_goal
+
+    def set_goal_from_text(self, text):
+        """Process text input and set new goal - Navega desde posición actual"""
+        predicted_goal = self.classify_intent(text)
+        
+        self.goal_type = predicted_goal
+        
+        if predicted_goal in self.places:
+            self.goal_pos = self.places[predicted_goal].copy()
+            print(f"Goal set to: {self.goal_type} at position {self.goal_pos}")
+        else:
+            print(f"Warning: {predicted_goal} not found in current map")
+        
+        # VERIFICACIÓN MEJORADA: Asegurar que estamos en una calle válida
+        agent_x, agent_y = self.agent_pos
+        current_cell = self.city_map[agent_y, agent_x]
+        
+        # Verificar si estamos en el parque
+        is_in_park = False
+        if self.park_area:
+            for park_cell in self.park_area:
+                if len(park_cell) >= 2 and agent_x == park_cell[0] and agent_y == park_cell[1]:
+                    is_in_park = True
+                    break
+        
+        # Verificar si estamos en otro objetivo
+        at_other_place = False
+        for place_name, place_pos in self.places.items():
+            if place_name != "park" and agent_x == place_pos[0] and agent_y == place_pos[1]:
+                at_other_place = True
+                break
+        
+        # DEBUG
+        print(f"DEBUG: Agent at ({agent_x}, {agent_y}), cell={current_cell}, in_park={is_in_park}, at_place={at_other_place}")
+        
+        # REPOSICIONAR si NO estamos en una calle limpia
+        # Una calle es válida si: es calle (1) Y no está en parque Y no está en otro lugar
+        on_clean_street = current_cell == 1 and not is_in_park and not at_other_place
+        
+        if not on_clean_street:
+            print(f"🔄 Relocating agent to clean street...")
+            
+            # Función simple para verificar si una posición es una calle limpia
+            def is_clean_street(check_x, check_y):
+                if not (0 <= check_x < GRID_SIZE and 0 <= check_y < GRID_SIZE):
+                    return False
+                
+                if self.city_map[check_y, check_x] != 1:
+                    return False
+                
+                # No debe ser parque
+                if self.park_area:
+                    for park_cell in self.park_area:
+                        if len(park_cell) >= 2 and check_x == park_cell[0] and check_y == park_cell[1]:
+                            return False
+                
+                return True
+            
+            # Buscar calle limpia más cercana al objetivo
+            best_street = None
+            best_distance = float('inf')
+            
+            # Primero intentar en radios crecientes (más eficiente)
+            max_search_radius = 8 if is_in_park else 5
+            
+            for radius in range(1, max_search_radius + 1):
+                for dy in range(-radius, radius + 1):
+                    for dx in range(-radius, radius + 1):
+                        if abs(dx) == radius or abs(dy) == radius:
+                            check_x = agent_x + dx
+                            check_y = agent_y + dy
+                            
+                            if is_clean_street(check_x, check_y):
+                                dist_to_goal = self._manhattan_distance([check_x, check_y], self.goal_pos)
+                                if dist_to_goal < best_distance:
+                                    best_distance = dist_to_goal
+                                    best_street = [check_x, check_y]
+                
+                # Si encontramos al menos una calle en este radio, usarla
+                if best_street is not None:
+                    print(f"✓ Found clean street at radius {radius}: {best_street}")
+                    break
+            
+            # Si no encontramos nada, buscar en todo el mapa
+            if best_street is None:
+                print(f"⚠️ Expanding search to entire map...")
+                street_positions = np.argwhere(self.city_map == 1)
+                
+                for street_pos in street_positions:
+                    sy, sx = int(street_pos[0]), int(street_pos[1])
+                    
+                    if is_clean_street(sx, sy):
+                        dist_to_goal = self._manhattan_distance([sx, sy], self.goal_pos)
+                        if dist_to_goal < best_distance:
+                            best_distance = dist_to_goal
+                            best_street = [sx, sy]
+            
+            # Aplicar reposicionamiento
+            if best_street:
+                self.agent_pos = best_street
+                print(f"✓ Agent relocated to: {self.agent_pos} (distance to goal: {best_distance})")
+            else:
+                # Fallback extremo
+                print(f"⚠️ Using random street fallback...")
+                self.agent_pos = self._find_random_street_position()
+                print(f"✓ Agent at: {self.agent_pos}")
+        else:
+            print(f"✓ Agent already on clean street at {self.agent_pos}")
+        
+        # Resetear contador de pasos y estado
+        self.steps = 0
+        self.total_reward = 0
+        self.visited_cells = set()
+        self.visited_cells.add(tuple(self.agent_pos))
+        
+        distance = self._manhattan_distance(self.agent_pos, self.goal_pos)
+        print(f"🎯 Navigating from: {self.agent_pos} to {self.goal_pos} (distance: {distance})")
+        
+        return predicted_goal
 
     def reset(self, *, seed=None, options=None):
         """Reset environment to initial state"""
         super().reset(seed=seed)
         
-        # Allow changing goal from options
-        if options and "goal_type" in options:
+        # Check if using NLP input
+        if options and "nlp_input" in options and self.use_nlp:
+            text_input = options["nlp_input"]
+            predicted_goal = self.classify_intent(text_input)
+            self.goal_type = predicted_goal
+        elif options and "goal_type" in options:
             self.goal_type = options["goal_type"]
         
-        # Regenerate city map with new seed
+        # Regenerate city map
         self.city_map = self._generate_city_map()
         
         # Initial agent position on a street
         self.agent_pos = self._find_random_street_position()
         
-        # Generate places randomly in buildings
+        # Generate places
         self._generate_places()
         
         # Set goal position
-        self.goal_pos = self.places[self.goal_type].copy()
+        if self.goal_type in self.places:
+            self.goal_pos = self.places[self.goal_type].copy()
+        else:
+            print(f"Warning: Goal type '{self.goal_type}' not found. Using restaurant.")
+            self.goal_type = "restaurant"
+            self.goal_pos = self.places[self.goal_type].copy()
         
         # Reset metrics
         self.steps = 0
@@ -114,7 +302,6 @@ class TouristBotEnv(gym.Env):
         self.visited_cells = set()
         self.visited_cells.add(tuple(self.agent_pos))
         
-        # Create initial observation
         observation = self._get_observation()
         info = {
             "goal_type": self.goal_type,
@@ -130,38 +317,45 @@ class TouristBotEnv(gym.Env):
         prev_pos = self.agent_pos.copy()
         self._take_action(action)
         
-        # Calculate distance to goal
         prev_distance = self._manhattan_distance(prev_pos, self.goal_pos)
         current_distance = self._manhattan_distance(self.agent_pos, self.goal_pos)
         
-        # Reward system
         reward = 0
         terminated = False
         
-        # Large reward: reach goal
-        if self.agent_pos == self.goal_pos:
+        # Check if goal is reached
+        goal_reached = False
+        
+        # For park: accept any cell in the park area
+        if self.goal_type == "park":
+            agent_x, agent_y = self.agent_pos
+            if self.park_area:
+                for park_cell in self.park_area:
+                    if len(park_cell) >= 2 and agent_x == park_cell[0] and agent_y == park_cell[1]:
+                        goal_reached = True
+                        break
+        else:
+            # For other places: exact position match
+            goal_reached = (self.agent_pos == self.goal_pos)
+        
+        if goal_reached:
             reward = +100.0
             terminated = True
-            print(f"Goal reached in {self.steps} steps!")
-        
+            print(f"🎯 Goal '{self.goal_type}' reached in {self.steps} steps!")
         else:
-            # Reward shaping: distance-based potential
             max_distance = GRID_SIZE * 2
             potential_prev = -prev_distance / max_distance
             potential_current = -current_distance / max_distance
             shaping_reward = potential_current - potential_prev
             reward += shaping_reward * 10
             
-            # Exploration bonus: visit new cells
             cell_tuple = tuple(self.agent_pos)
             if cell_tuple not in self.visited_cells:
                 reward += 0.5
                 self.visited_cells.add(cell_tuple)
             
-            # Efficiency penalty: small step cost
             reward -= 0.1
         
-        # Truncate: penalty if max steps exceeded
         truncated = self.steps >= self.max_steps
         if truncated:
             reward -= 10.0
@@ -169,7 +363,6 @@ class TouristBotEnv(gym.Env):
         
         self.total_reward += reward
         
-        # Get observation and info
         observation = self._get_observation()
         info = {
             "steps": self.steps,
@@ -183,21 +376,22 @@ class TouristBotEnv(gym.Env):
         """Render environment visually"""
         if self.render_mode is None:
             return None
-            
-        # Clear image
-        self.img = np.zeros((TABLE_SIZE, TABLE_SIZE, 3), dtype='uint8')
         
-        # Dibujar ciudad: calles, edificios y parque
+        # Create expanded image with space for text input at bottom
+        input_height = 80 if self.use_nlp else 0
+        total_height = TABLE_SIZE + input_height
+        self.img = np.zeros((total_height, TABLE_SIZE, 3), dtype='uint8')
+        
+        # Draw city
         for y in range(GRID_SIZE):
             for x in range(GRID_SIZE):
                 pos = [x, y]
                 
-                # Verificar si es parte del parque
                 if pos in self.park_area:
                     color = COLORS["park"]
-                elif self.city_map[y, x] == 1:  # Calle
+                elif self.city_map[y, x] == 1:
                     color = COLORS["street"]
-                else:  # Edificio
+                else:
                     color = COLORS["building"]
                 
                 cv2.rectangle(
@@ -213,9 +407,8 @@ class TouristBotEnv(gym.Env):
             cv2.line(self.img, (i * CELL_SIZE, 0), (i * CELL_SIZE, TABLE_SIZE), (60, 60, 60), 1)
             cv2.line(self.img, (0, i * CELL_SIZE), (TABLE_SIZE, i * CELL_SIZE), (60, 60, 60), 1)
         
-        # Draw places of interest
+        # Draw places
         for place_type, pos in self.places.items():
-            # Park is already drawn as green area, just add icon in center
             if place_type == "park":
                 x, y = pos
                 label = "P"
@@ -225,7 +418,6 @@ class TouristBotEnv(gym.Env):
                 text_x = x * CELL_SIZE + (CELL_SIZE - text_size[0]) // 2
                 text_y = y * CELL_SIZE + (CELL_SIZE + text_size[1]) // 2
                 
-                # White background for contrast
                 cv2.circle(
                     self.img,
                     (x * CELL_SIZE + CELL_SIZE // 2, y * CELL_SIZE + CELL_SIZE // 2),
@@ -244,7 +436,6 @@ class TouristBotEnv(gym.Env):
                     2
                 )
             else:
-                # Other places: draw as colored rectangles
                 color = COLORS[place_type]
                 x, y = pos
                 margin = max(2, CELL_SIZE // 6)
@@ -255,18 +446,15 @@ class TouristBotEnv(gym.Env):
                     color,
                     -1
                 )
-                # Add label
+                
                 if CELL_SIZE >= 40:
-                    if place_type == "restaurant":
-                        label = "R"
-                    elif place_type == "museum":
-                        label = "M"
-                    elif place_type == "shop":
-                        label = "S"
-                    elif place_type == "cinema":
-                        label = "C"
-                    else:
-                        label = place_type[0].upper()
+                    label_map = {
+                        "restaurant": "R",
+                        "museum": "M",
+                        "shop": "S",
+                        "cinema": "C"
+                    }
+                    label = label_map.get(place_type, place_type[0].upper())
                     font_scale = 0.5
                 else:
                     label = place_type[0].upper()
@@ -286,14 +474,14 @@ class TouristBotEnv(gym.Env):
                     1
                 )
         
-        # Draw agent as white circle
+        # Draw agent
         agent_x, agent_y = self.agent_pos
         center = (agent_x * CELL_SIZE + CELL_SIZE // 2, agent_y * CELL_SIZE + CELL_SIZE // 2)
         radius = max(8, CELL_SIZE // 3)
         cv2.circle(self.img, center, radius, COLORS["agent"], -1)
         cv2.circle(self.img, center, radius, (100, 100, 100), 2)
         
-        # Add on-screen info
+        # Add info text
         info_text = [
             f"Goal: {self.goal_type.upper()}",
             f"Steps: {self.steps}/{self.max_steps}",
@@ -301,45 +489,159 @@ class TouristBotEnv(gym.Env):
             f"Pos: ({agent_x}, {agent_y})"
         ]
         
+        if self.use_nlp:
+            # Mostrar estado de navegación
+            if self.navigating:
+                status = "Status: NAVIGATING"
+                status_color = (100, 255, 100)  # Verde
+            else:
+                status = "Status: WAITING"
+                status_color = (255, 200, 100)  # Amarillo/Naranja
+            info_text.append(status)
+        
         y_offset = 20
-        for text in info_text:
+        for i, text in enumerate(info_text):
+            # Color especial para el status
+            if self.use_nlp and "Status:" in text:
+                color = status_color
+            else:
+                color = (255, 255, 255)
+            
             cv2.putText(
                 self.img,
                 text,
                 (10, y_offset),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
-                (255, 255, 255),
+                color,  # Usar color dinámico
                 1
             )
             y_offset += 20
         
-        # Show window only if render_mode is 'human'
+        # Draw text input box if NLP is enabled
+        if self.use_nlp:
+            input_box_y = TABLE_SIZE + 5
+            
+            # Draw background box
+            cv2.rectangle(
+                self.img,
+                (5, input_box_y),
+                (TABLE_SIZE - 5, TABLE_SIZE + 75),
+                (40, 40, 40),
+                -1
+            )
+            cv2.rectangle(
+                self.img,
+                (5, input_box_y),
+                (TABLE_SIZE - 5, TABLE_SIZE + 75),
+                (100, 100, 100),
+                2
+            )
+            
+            # Draw prompt - más claro sobre el estado
+            if self.text_input_active:
+                prompt_text = "Type your instruction (press Enter):"
+            elif self.navigating:
+                prompt_text = "Navigating... Press 'T' for new instruction"
+            else:
+                prompt_text = "Press 'T' to give an instruction"
+            
+            cv2.putText(
+                self.img,
+                prompt_text,
+                (10, input_box_y + 20),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (200, 200, 200),
+                1
+            )
+            
+            # Draw input text
+            display_text = self.current_text_input if self.text_input_active else self.nlp_input
+            if self.text_input_active:
+                display_text += "_"  # Show cursor
+            
+            # Truncate if too long
+            max_chars = 55
+            if len(display_text) > max_chars:
+                display_text = display_text[:max_chars] + "..."
+            
+            cv2.putText(
+                self.img,
+                display_text,
+                (10, input_box_y + 45),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255) if self.text_input_active else (150, 150, 150),
+                1
+            )
+            
+            # Show instructions
+            cv2.putText(
+                self.img,
+                "ESC: cancel | ENTER: confirm | BACKSPACE: delete",
+                (10, input_box_y + 65),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.3,
+                (150, 150, 150),
+                1
+            )
+        
+        # Draw Exit button (top-right corner)
+        button_width = 80
+        button_height = 30
+        button_x = TABLE_SIZE - button_width - 10
+        button_y = 10
+        
+        # Button color changes on hover
+        button_color = (50, 50, 200) if self.exit_button_hovered else (80, 80, 80)
+        text_color = (255, 255, 255)
+        
+        # Draw button background
+        cv2.rectangle(
+            self.img,
+            (button_x, button_y),
+            (button_x + button_width, button_y + button_height),
+            button_color,
+            -1
+        )
+        # Draw button border
+        cv2.rectangle(
+            self.img,
+            (button_x, button_y),
+            (button_x + button_width, button_y + button_height),
+            (150, 150, 150),
+            2
+        )
+        # Draw button text
+        cv2.putText(
+            self.img,
+            "EXIT",
+            (button_x + 20, button_y + 20),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            text_color,
+            1
+        )
+        
         if self.render_mode == 'human':
-            cv2.imshow('TouristBot', self.img)
-            cv2.waitKey(1)
+            cv2.imshow('TouristBot Environment', self.img)
+            self._handle_keyboard_input()
+            if self.use_nlp:
+                self._handle_mouse_input()
         
         return self.img if self.render_mode == 'rgb_array' else None
 
-    def close(self):
-        """Close visualization windows"""
-        cv2.destroyAllWindows()
-
-    # Private methods
-    
+    # ...existing code... (keep all private methods unchanged)
     def _generate_city_map(self):
-        """Generate city map with streets and buildings (0=building, 1=street)"""
         city_map = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.int8)
         
-        # Create horizontal streets every 4 rows
         for y in range(0, GRID_SIZE, 4):
             city_map[y, :] = 1
         
-        # Create vertical streets every 4 columns
         for x in range(0, GRID_SIZE, 4):
             city_map[:, x] = 1
         
-        # Borders are also streets to ensure connectivity
         city_map[0, :] = 1
         city_map[-1, :] = 1
         city_map[:, 0] = 1
@@ -347,7 +649,6 @@ class TouristBotEnv(gym.Env):
         
         return city_map
     
-    # Find random position on a street
     def _find_random_street_position(self):
         street_positions = np.argwhere(self.city_map == 1)
         
@@ -358,7 +659,6 @@ class TouristBotEnv(gym.Env):
         else:
             return [0, 0]
     
-    # Find random position in a building (not on street)
     def _find_random_building_position(self):
         building_positions = np.argwhere(self.city_map == 0)
         
@@ -369,7 +669,6 @@ class TouristBotEnv(gym.Env):
         else:
             return [1, 1]
     
-    # Check if position has at leas one adjacent street
     def _is_adjacent_to_street(self, pos):
         x, y = pos
         adjacent_positions = [
@@ -385,11 +684,9 @@ class TouristBotEnv(gym.Env):
                     return True
         return False
     
-    # Generate touristic places in random positions inside buildings with access to streets
     def _generate_places(self):
         self.places = {}
         
-        # Get positions of all buildings that have at least one adjacent street
         building_positions = np.argwhere(self.city_map == 0)
         accessible_buildings = []
         
@@ -400,18 +697,15 @@ class TouristBotEnv(gym.Env):
                 accessible_buildings.append(pos_list)
         
         if len(accessible_buildings) < 4:
-            print("Warning: Few accessible buildings, using alternative positions")
             for pos in building_positions[:4]:
                 y, x = pos
                 accessible_buildings.append([int(x), int(y)])
         
-        # 1. Park: find 3x3 building block for park
         park_placed = False
         for attempt in range(50):
             start_x = self.np_random.integers(1, GRID_SIZE - 4)
             start_y = self.np_random.integers(1, GRID_SIZE - 4)
             
-            # Check if valid 3x3 building block
             is_valid_block = True
             for dy in range(3):
                 for dx in range(3):
@@ -424,7 +718,6 @@ class TouristBotEnv(gym.Env):
                     break
             
             if is_valid_block:
-                # Check for at least one adjacent street on perimeter
                 has_street_access = False
                 for dy in range(-1, 4):
                     for dx in range(-1, 4):
@@ -439,17 +732,14 @@ class TouristBotEnv(gym.Env):
                         break
                 
                 if has_street_access:
-                    # Place park at center of 3x3 block
                     park_center = [start_x + 1, start_y + 1]
                     self.places["park"] = park_center
                     
-                    # Mark all park cells
                     self.park_area = []
                     for dy in range(3):
                         for dx in range(3):
                             self.park_area.append([start_x + dx, start_y + dy])
                     
-                    # Remove park positions from accessible buildings
                     accessible_buildings = [pos for pos in accessible_buildings 
                                            if pos not in self.park_area]
                     
@@ -457,19 +747,13 @@ class TouristBotEnv(gym.Env):
                     break
         
         if not park_placed:
-            print("Could not place 3x3 park, using single building")
             self.places["park"] = accessible_buildings[0] if accessible_buildings else [5, 5]
             self.park_area = [self.places["park"]]
             accessible_buildings = accessible_buildings[1:] if len(accessible_buildings) > 1 else []
         
-        # 2. Other places: select random positions
         remaining_places = ["restaurant", "museum", "shop", "cinema"]
         num_places_needed = min(len(remaining_places), len(accessible_buildings))
         
-        if num_places_needed < len(remaining_places):
-            print(f"Warning: Only {num_places_needed} buildings available")
-        
-        # Select random buildings
         if accessible_buildings:
             indices = self.np_random.choice(
                 len(accessible_buildings), 
@@ -480,15 +764,12 @@ class TouristBotEnv(gym.Env):
             for i, place_type in enumerate(remaining_places[:num_places_needed]):
                 self.places[place_type] = accessible_buildings[indices[i]]
         
-        # Ensure at least restaurant and museum exist for compatibility
         if "restaurant" not in self.places:
             self.places["restaurant"] = self._find_random_building_position()
         if "museum" not in self.places:
             self.places["museum"] = self._find_random_building_position()
 
-    # Execute action (0=up, 1=down, 2=left, 3=right)
     def _take_action(self, action):
-
         x, y = self.agent_pos
         new_x, new_y = x, y
         
@@ -503,7 +784,6 @@ class TouristBotEnv(gym.Env):
         
         new_pos = [new_x, new_y]
         
-        # Allow movement if: street, park, or place of interest
         if self.city_map[new_y, new_x] == 1:
             self.agent_pos = new_pos
         elif new_pos in self.park_area:
@@ -514,10 +794,8 @@ class TouristBotEnv(gym.Env):
               new_pos == self.places.get("cinema")):
             self.agent_pos = new_pos
 
-    # Create observation vector
     def _get_observation(self):
         if not self.use_partial_obs:
-            # Full observation
             goal_type_encoded = PLACE_TYPES.index(self.goal_type)
             observation = np.array([
                 self.agent_pos[0],
@@ -527,12 +805,10 @@ class TouristBotEnv(gym.Env):
                 goal_type_encoded
             ], dtype=np.float32)
         else:
-            # Partial view: grid centered on agent
             observation = self._get_partial_view()
         
         return observation
     
-    # Generate partial view centered on agent
     def _get_partial_view(self):
         half_view = self.view_size // 2
         grid_view = np.zeros((self.view_size, self.view_size), dtype=np.float32)
@@ -547,17 +823,14 @@ class TouristBotEnv(gym.Env):
                 local_x = dx + half_view
                 local_y = dy + half_view
                 
-                # Out of bounds = building
                 if abs_x < 0 or abs_x >= GRID_SIZE or abs_y < 0 or abs_y >= GRID_SIZE:
                     grid_view[local_y, local_x] = 0
                     continue
                 
                 pos_check = [abs_x, abs_y]
                 
-                # Agent always at center
                 if dx == 0 and dy == 0:
                     grid_view[local_y, local_x] = 4
-                # Check for places
                 elif pos_check == self.places.get("restaurant"):
                     grid_view[local_y, local_x] = 2
                 elif pos_check == self.places.get("museum"):
@@ -568,7 +841,6 @@ class TouristBotEnv(gym.Env):
                     grid_view[local_y, local_x] = 6
                 elif pos_check in self.park_area:
                     grid_view[local_y, local_x] = 7
-                # Street or building
                 else:
                     grid_view[local_y, local_x] = float(self.city_map[abs_y, abs_x])
         
@@ -584,43 +856,125 @@ class TouristBotEnv(gym.Env):
         
         return observation
 
-    # Calculate manhattan distance between 2 positions
     def _manhattan_distance(self, pos1, pos2):
         return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
-
-
-# Test function
-def test_environment():
-    print("="*60)
-    print("TESTING TOURISTBOT ENVIRONMENT")
-    print("="*60)
     
-    env = TouristBotEnv(goal_type="restaurant")
-    
-    observation, info = env.reset()
-    print(f"\nInitial state:")
-    print(f"   Agent at: {env.agent_pos}")
-    print(f"   Goal: {info['goal_type']} at {info['goal_position']}")
-    print(f"   Observation: {observation}")
-    
-    print(f"\nRunning random actions...")
-    
-    for episode in range(3):
-        observation, info = env.reset(options={"goal_type": random.choice(PLACE_TYPES)})
-        print(f"\n--- Episode {episode + 1} ---")
-        print(f"Goal: {env.goal_type}")
+    def _handle_keyboard_input(self):
+        """Handle keyboard input for text entry"""
+        # Wait longer if text input is active to capture keystrokes better
+        wait_time = 50 if self.text_input_active else 1
+        key = cv2.waitKey(wait_time) & 0xFF
         
-        done = False
-        while not done:
+        if key == 255:  # No key pressed
+            return
+        
+        # ESC key to exit (only when not in text input mode)
+        if key == 27 and not self.text_input_active:  # ESC key
+            print("\n[Exit requested by ESC key]")
+            self.exit_requested = True
+            return
+        
+        # 'T' key to activate text input
+        if key == ord('t') or key == ord('T'):
+            if not self.text_input_active:
+                self.text_input_active = True
+                self.current_text_input = ""
+                print("\n[Text input activated - type your destination]")
+                return  # Don't process the 't' key as input
+        
+        # If text input is active, handle typing
+        if self.text_input_active:
+            if key == 13 or key == 10:  # Enter key (13 on Windows, 10 on Mac/Linux)
+                if self.current_text_input.strip():
+                    print(f"\n[Processing: '{self.current_text_input}']")
+                    self.nlp_input = self.current_text_input
+                    predicted_goal = self.set_goal_from_text(self.current_text_input)
+                    print(f"[New goal set: {predicted_goal}]")
+                    self.text_input_active = False
+                    self.current_text_input = ""
+                    # Activar navegación cuando hay nueva instrucción
+                    self.new_instruction_received = True
+                    self.navigating = True
+                else:
+                    print("\n[Empty input - cancelled]")
+                    self.text_input_active = False
+            
+            elif key == 27:  # ESC key
+                print("\n[Text input cancelled]")
+                self.text_input_active = False
+                self.current_text_input = ""
+            
+            elif key == 8 or key == 127:  # Backspace (8 on Windows, 127 on Mac)
+                if len(self.current_text_input) > 0:
+                    self.current_text_input = self.current_text_input[:-1]
+            
+            elif 32 <= key <= 126:  # Printable ASCII characters
+                self.current_text_input += chr(key)
+                print(f"Input: {self.current_text_input}")  # Debug: mostrar lo que se escribe
+    
+    def _handle_mouse_input(self):
+        """Handle mouse input for button clicks"""
+        # Mouse callback for exit button
+        def mouse_callback(event, x, y, flags, param):
+            button_width = 80
+            button_height = 30
+            button_x = TABLE_SIZE - button_width - 10
+            button_y = 10
+            
+            # Check if mouse is over exit button
+            if button_x <= x <= button_x + button_width and button_y <= y <= button_y + button_height:
+                self.exit_button_hovered = True
+                
+                # Check for click
+                if event == cv2.EVENT_LBUTTONDOWN:
+                    print("\n[Exit button clicked]")
+                    self.exit_requested = True
+            else:
+                self.exit_button_hovered = False
+        
+        cv2.setMouseCallback('TouristBot Environment', mouse_callback)
+
+    def close(self):
+        cv2.destroyAllWindows()
+
+
+# Test function with NLP
+def test_environment_with_nlp():
+    print("="*60)
+    print("TESTING TOURISTBOT WITH NLP")
+    print("="*60)
+    
+    env = TouristBotEnv(goal_type="restaurant", use_nlp=True, render_mode="human")
+    
+    # Test phrases
+    test_phrases = [
+        "I want to eat something",
+        "I'm hungry, where can I get food?",
+        "Let's watch a movie",
+        "I need to buy some clothes",
+        "Show me some art and history",
+        "I want to relax in nature"
+    ]
+    
+    for phrase in test_phrases:
+        print(f"\n{'='*60}")
+        print(f"Testing phrase: '{phrase}'")
+        observation, info = env.reset(options={"nlp_input": phrase})
+        
+        print(f"Agent at: {env.agent_pos}")
+        print(f"Detected goal: {info['goal_type']} at {info['goal_position']}")
+        
+        # Run a few random steps
+        for _ in range(10):
             env.render()
             action = env.action_space.sample()
             observation, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
+            
+            if terminated or truncated:
+                break
             
             time.sleep(0.1)
         
-        print(f"Result: {'Success' if terminated else 'Timeout'}")
-        print(f"Total reward: {env.total_reward:.2f}")
         time.sleep(1)
     
     env.close()
@@ -628,4 +982,4 @@ def test_environment():
 
 
 if __name__ == "__main__":
-    test_environment()
+    test_environment_with_nlp()

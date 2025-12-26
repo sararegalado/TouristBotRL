@@ -16,22 +16,27 @@ CONFIG = {
     # Env
     "use_partial_obs": True,
     "view_size": 5,
-    "n_envs": 4,  # Entrenamiento paralelo
+    "n_envs": 8,  # Más entornos paralelos para mejor exploración
     
-    # PPO Hyperparameters
+    # PPO Hyperparameters - OPTIMIZADOS
     "learning_rate": 3e-4,
     "n_steps": 2048,
-    "batch_size": 64,
+    "batch_size": 256,  # Aumentado para mejor estabilidad
     "n_epochs": 10,
     "gamma": 0.99,
     "gae_lambda": 0.95,
     "clip_range": 0.2,
-    "ent_coef": 0.01,
+    "ent_coef": 0.01,  # Entropía para exploración
+    "vf_coef": 0.5,    # Value function coefficient
+    "max_grad_norm": 0.5,  # Gradient clipping
     
-    # Entrenamiento
-    "total_timesteps": 200000,
-    "eval_freq": 10000,
-    "save_freq": 20000,
+    # Network architecture
+    "net_arch": [dict(pi=[256, 256], vf=[256, 256])],  # Redes más grandes
+    
+    # Entrenamiento - MÁS LARGO
+    "total_timesteps": 500000,  # 500k timesteps (era 200k)
+    "eval_freq": 5000,
+    "save_freq": 25000,
     
     # Paths
     "log_dir": "./logs/ppo_basic/",
@@ -115,6 +120,9 @@ def train_ppo_basic():
         gae_lambda=CONFIG["gae_lambda"],
         clip_range=CONFIG["clip_range"],
         ent_coef=CONFIG["ent_coef"],
+        vf_coef=CONFIG["vf_coef"],
+        max_grad_norm=CONFIG["max_grad_norm"],
+        policy_kwargs={"net_arch": CONFIG["net_arch"]},  # Redes más profundas
         verbose=1,
         tensorboard_log=CONFIG["tensorboard_log"],
         device="auto"
@@ -122,11 +130,14 @@ def train_ppo_basic():
     
     print(f"\nArquitectura de la política:")
     print(f"   - Input: {env.observation_space.shape[0]} (observación)")
+    print(f"   - Hidden layers: [256, 256] para actor y crítico")
     print(f"   - Output: {env.action_space.n} (acciones)")
     print(f"   - Policy: MLP (Red neuronal fully-connected)")
+    print(f"   - Total parámetros: ~350k")
     
     # Entrenar
-    print(f"\n🎓 Iniciando entrenamiento...")
+    print(f"\n🎓 Iniciando entrenamiento MEJORADO...")
+    print(f"   Duración estimada: ~30-60 minutos")
     print(f"   TensorBoard: tensorboard --logdir {CONFIG['tensorboard_log']}")
     print(f"\n{'='*70}\n")
     

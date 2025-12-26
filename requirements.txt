@@ -1,0 +1,19 @@
+# Core dependencies
+gymnasium>=0.29.0
+numpy<2.0.0,>=1.24.0  # Compatibilidad con stable-baselines3
+opencv-python>=4.8.0
+
+# Reinforcement Learning
+stable-baselines3>=2.0.0
+torch>=2.0.0
+
+# NLP - Zero-shot classification
+transformers>=4.30.0
+sentencepiece>=0.1.99
+
+# Visualization and monitoring
+matplotlib>=3.7.0
+tensorboard>=2.13.0
+
+# Utilities
+tqdm>=4.65.0
