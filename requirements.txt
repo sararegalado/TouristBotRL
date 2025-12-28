@@ -6,6 +6,7 @@ opencv-python>=4.8.0
 # Reinforcement Learning
 stable-baselines3>=2.0.0
 torch>=2.0.0
+stable-baselines3[extra]
 
 # NLP - Zero-shot classification
 transformers>=4.30.0

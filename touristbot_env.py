@@ -278,6 +278,9 @@ class TouristBotEnv(gym.Env):
             self.goal_type = predicted_goal
         elif options and "goal_type" in options:
             self.goal_type = options["goal_type"]
+        else:
+            # ✨ RANDOMIZE GOAL: Choose random goal type for better generalization
+            self.goal_type = random.choice(PLACE_TYPES)
         
         # Regenerate city map
         self.city_map = self._generate_city_map()
