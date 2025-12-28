@@ -2,63 +2,95 @@
 ================================================================================
 COMPARISON RESULTS
 ================================================================================
-Tested: 2025-12-28 12:06:50
-Episodes per model: 10
-Total models: 5
+Tested: 2025-12-28 18:23:21
+Episodes per model: 30
+Total models: 9
 
 Rank   Algorithm Success Rate   Avg Steps      Avg Reward     Model
 --------------------------------------------------------------------------------
-1      PPO       100.0% (10/10)    13.9 ± 4.3    108.2 ± 2.8   models
-2      PPO       100.0% (10/10)    14.8 ± 7.9    108.8 ± 5.1   models
-3      PPO       100.0% (10/10)    16.2 ± 4.9    109.4 ± 3.1   models
-4      A2C        90.0% (10/10)    33.7 ± 55.7    96.0 ± 39.1  models
-5      DQN        70.0% (10/10)    69.8 ± 85.3    67.6 ± 62.3  models
+1      PPO       100.0% (30/30)    13.6 ± 5.7    107.8 ± 3.6   models
+2      PPO        96.7% (30/30)    18.6 ± 34.3   102.8 ± 23.9  models
+3      PPO        90.0% (30/30)    31.2 ± 56.5    93.9 ± 40.3  models
+4      A2C        90.0% (30/30)    32.6 ± 56.1    94.9 ± 39.8  models
+5      PPO        90.0% (30/30)    33.2 ± 56.1    95.5 ± 39.6  models
+6      DQN        86.7% (30/30)    34.5 ± 65.2    87.5 ± 45.1  models
+7      A2C        83.3% (30/30)    44.7 ± 69.8    85.9 ± 49.4  models
+8      DQN        80.0% (30/30)    51.3 ± 74.7    81.5 ± 53.7  models
+9      PPO        76.7% (30/30)    58.7 ± 78.2    78.7 ± 55.8  models
 
 ================================================================================
 DETAILED STATISTICS
 ================================================================================
 
 Rank 1: final_model.zip
-  Path: runs/ppo_aggressive/models/final_model.zip
+  Path: runs/ppo_basic_curriculum_time_pressure_20251228_181333/models/final_model.zip
   Algorithm: PPO
-  Success Rate: 100.0% (10/10)
-  Steps: 13.9 ± 4.3 (min: 7, max: 19)
-  Reward: 108.19 ± 2.76 (min: 103.90, max: 111.70)
+  Success Rate: 100.0% (30/30)
+  Steps: 13.6 ± 5.7 (min: 2, max: 24)
+  Reward: 107.76 ± 3.61 (min: 100.65, max: 114.95)
 
 Rank 2: final_model.zip
-  Path: runs/ppo_basic/models/final_model.zip
+  Path: runs/ppo_basic_curriculum_sparse_rewards_20251228_181529/models/final_model.zip
   Algorithm: PPO
-  Success Rate: 100.0% (10/10)
-  Steps: 14.8 ± 7.9 (min: 4, max: 25)
-  Reward: 108.77 ± 5.11 (min: 101.95, max: 115.60)
+  Success Rate: 96.7% (29/30)
+  Steps: 18.6 ± 34.3 (min: 3, max: 200)
+  Reward: 102.80 ± 23.93 (min: -24.00, max: 116.40)
 
 Rank 3: final_model.zip
-  Path: runs/ppo_basic_grid_size_20251228_120312/models/final_model.zip
+  Path: runs/ppo_basic_20251228_175225/models/final_model.zip
   Algorithm: PPO
-  Success Rate: 100.0% (10/10)
-  Steps: 16.2 ± 4.9 (min: 6, max: 23)
-  Reward: 109.43 ± 3.11 (min: 103.25, max: 113.80)
+  Success Rate: 90.0% (27/30)
+  Steps: 31.2 ± 56.5 (min: 1, max: 200)
+  Reward: 93.88 ± 40.29 (min: -28.50, max: 114.95)
 
 Rank 4: final_model.zip
-  Path: runs/a2c_basic/models/final_model.zip
+  Path: runs/a2c_fast_20251228_180104/models/final_model.zip
   Algorithm: A2C
-  Success Rate: 90.0% (9/10)
-  Steps: 33.7 ± 55.7 (min: 2, max: 200)
-  Reward: 95.97 ± 39.14 (min: -21.00, max: 113.15)
+  Success Rate: 90.0% (27/30)
+  Steps: 32.6 ± 56.1 (min: 3, max: 200)
+  Reward: 94.92 ± 39.83 (min: -27.00, max: 116.90)
 
 Rank 5: final_model.zip
-  Path: runs/dqn_double/models/final_model.zip
+  Path: runs/ppo_aggressive_20251228_175427/models/final_model.zip
+  Algorithm: PPO
+  Success Rate: 90.0% (27/30)
+  Steps: 33.2 ± 56.1 (min: 1, max: 200)
+  Reward: 95.53 ± 39.61 (min: -24.00, max: 118.35)
+
+Rank 6: final_model.zip
+  Path: runs/dqn_basic_20251228_180218/models/final_model.zip
   Algorithm: DQN
-  Success Rate: 70.0% (7/10)
-  Steps: 69.8 ± 85.3 (min: 9, max: 200)
-  Reward: 67.59 ± 62.26 (min: -29.50, max: 114.95)
+  Success Rate: 86.7% (26/30)
+  Steps: 34.5 ± 65.2 (min: 1, max: 200)
+  Reward: 87.47 ± 45.10 (min: -29.25, max: 115.10)
+
+Rank 7: final_model.zip
+  Path: runs/a2c_basic_20251228_175950/models/final_model.zip
+  Algorithm: A2C
+  Success Rate: 83.3% (25/30)
+  Steps: 44.7 ± 69.8 (min: 3, max: 200)
+  Reward: 85.93 ± 49.44 (min: -27.00, max: 117.55)
+
+Rank 8: final_model.zip
+  Path: runs/dqn_double_20251228_180527/models/final_model.zip
+  Algorithm: DQN
+  Success Rate: 80.0% (24/30)
+  Steps: 51.3 ± 74.7 (min: 2, max: 200)
+  Reward: 81.53 ± 53.73 (min: -29.50, max: 119.00)
+
+Rank 9: final_model.zip
+  Path: runs/ppo_conservative_20251228_175735/models/final_model.zip
+  Algorithm: PPO
+  Success Rate: 76.7% (23/30)
+  Steps: 58.7 ± 78.2 (min: 1, max: 200)
+  Reward: 78.70 ± 55.81 (min: -30.00, max: 117.05)
 
 ================================================================================
 BEST MODEL
 ================================================================================
-Model: runs/ppo_aggressive/models/final_model.zip
+Model: runs/ppo_basic_curriculum_time_pressure_20251228_181333/models/final_model.zip
 Algorithm: PPO
 Success Rate: 100.0%
-Average Steps: 13.9 ± 4.3
-Average Reward: 108.19 ± 2.76
+Average Steps: 13.6 ± 5.7
+Average Reward: 107.76 ± 3.61
 ================================================================================

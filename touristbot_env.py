@@ -30,14 +30,6 @@ COLORS = {
 # Place types available in the city
 PLACE_TYPES = ["restaurant", "museum", "shop", "cinema", "park"]
 
-# Zero-shot classification labels
-PLACE_LABELS = {
-    "restaurant": "restaurant, food, eat, dining, lunch, dinner, cafe",
-    "museum": "museum, art, culture, exhibition, history, gallery",
-    "shop": "shop, shopping, store, buy, market, mall",
-    "cinema": "cinema, movie, film, theater, watch",
-    "park": "park, garden, nature, outdoor, green space"
-}
 
 class TouristBotEnv(gym.Env):
     metadata = {
@@ -105,9 +97,9 @@ class TouristBotEnv(gym.Env):
         self.exit_button_hovered = False
         self.exit_requested = False
         
-        # Navigation control - solo moverse con instrucciones
-        self.navigating = False  # True cuando está ejecutando navegación
-        self.new_instruction_received = False  # True cuando hay nueva instrucción
+        # Navigation control - only moves when an instruction is given
+        self.navigating = False  
+        self.new_instruction_received = False  
         
         # Metrics
         self.steps = 0
@@ -121,8 +113,8 @@ class TouristBotEnv(gym.Env):
         print(f"   NLP: {'Enabled' if use_nlp else 'Disabled'}")
         print(f"   Initial goal: {goal_type}")
 
+    # Function to determine goal with zero-shot classification
     def classify_intent(self, text):
-        """Use zero-shot classification to determine user intent"""
         if not self.use_nlp:
             print("NLP is not enabled. Using default goal.")
             return self.goal_type
@@ -148,8 +140,8 @@ class TouristBotEnv(gym.Env):
         
         return predicted_goal
 
+    # Process text and set new goal. Navigates from actual position
     def set_goal_from_text(self, text):
-        """Process text input and set new goal - Navega desde posición actual"""
         predicted_goal = self.classify_intent(text)
         
         self.goal_type = predicted_goal
@@ -160,11 +152,11 @@ class TouristBotEnv(gym.Env):
         else:
             print(f"Warning: {predicted_goal} not found in current map")
         
-        # VERIFICACIÓN MEJORADA: Asegurar que estamos en una calle válida
+        # Verify that we are in a valid street
         agent_x, agent_y = self.agent_pos
         current_cell = self.city_map[agent_y, agent_x]
         
-        # Verificar si estamos en el parque
+        # Verify if we are in a park
         is_in_park = False
         if self.park_area:
             for park_cell in self.park_area:
@@ -172,7 +164,7 @@ class TouristBotEnv(gym.Env):
                     is_in_park = True
                     break
         
-        # Verificar si estamos en otro objetivo
+        # Verifiy if we are in another objective
         at_other_place = False
         for place_name, place_pos in self.places.items():
             if place_name != "park" and agent_x == place_pos[0] and agent_y == place_pos[1]:
@@ -182,14 +174,13 @@ class TouristBotEnv(gym.Env):
         # DEBUG
         print(f"DEBUG: Agent at ({agent_x}, {agent_y}), cell={current_cell}, in_park={is_in_park}, at_place={at_other_place}")
         
-        # REPOSICIONAR si NO estamos en una calle limpia
-        # Una calle es válida si: es calle (1) Y no está en parque Y no está en otro lugar
+        # Reposition if we aren't in a clean street
         on_clean_street = current_cell == 1 and not is_in_park and not at_other_place
         
         if not on_clean_street:
-            print(f"🔄 Relocating agent to clean street...")
+            print(f"Relocating agent to clean street...")
             
-            # Función simple para verificar si una posición es una calle limpia
+            # Verify if clean street
             def is_clean_street(check_x, check_y):
                 if not (0 <= check_x < GRID_SIZE and 0 <= check_y < GRID_SIZE):
                     return False
@@ -197,7 +188,6 @@ class TouristBotEnv(gym.Env):
                 if self.city_map[check_y, check_x] != 1:
                     return False
                 
-                # No debe ser parque
                 if self.park_area:
                     for park_cell in self.park_area:
                         if len(park_cell) >= 2 and check_x == park_cell[0] and check_y == park_cell[1]:
@@ -205,11 +195,10 @@ class TouristBotEnv(gym.Env):
                 
                 return True
             
-            # Buscar calle limpia más cercana al objetivo
+            # Find clean street close to the goal
             best_street = None
             best_distance = float('inf')
             
-            # Primero intentar en radios crecientes (más eficiente)
             max_search_radius = 8 if is_in_park else 5
             
             for radius in range(1, max_search_radius + 1):
@@ -225,14 +214,13 @@ class TouristBotEnv(gym.Env):
                                     best_distance = dist_to_goal
                                     best_street = [check_x, check_y]
                 
-                # Si encontramos al menos una calle en este radio, usarla
                 if best_street is not None:
                     print(f"✓ Found clean street at radius {radius}: {best_street}")
                     break
             
-            # Si no encontramos nada, buscar en todo el mapa
+            # else look through all the map
             if best_street is None:
-                print(f"⚠️ Expanding search to entire map...")
+                print(f"Expanding search to entire map...")
                 street_positions = np.argwhere(self.city_map == 1)
                 
                 for street_pos in street_positions:
@@ -244,31 +232,31 @@ class TouristBotEnv(gym.Env):
                             best_distance = dist_to_goal
                             best_street = [sx, sy]
             
-            # Aplicar reposicionamiento
+            # Apply reposition
             if best_street:
                 self.agent_pos = best_street
-                print(f"✓ Agent relocated to: {self.agent_pos} (distance to goal: {best_distance})")
+                print(f"Agent relocated to: {self.agent_pos} (distance to goal: {best_distance})")
             else:
-                # Fallback extremo
-                print(f"⚠️ Using random street fallback...")
+                # Fallback
+                print(f"Using random street fallback...")
                 self.agent_pos = self._find_random_street_position()
-                print(f"✓ Agent at: {self.agent_pos}")
+                print(f"Agent at: {self.agent_pos}")
         else:
-            print(f"✓ Agent already on clean street at {self.agent_pos}")
+            print(f"Agent already on clean street at {self.agent_pos}")
         
-        # Resetear contador de pasos y estado
+        # Reset steps and state
         self.steps = 0
         self.total_reward = 0
         self.visited_cells = set()
         self.visited_cells.add(tuple(self.agent_pos))
         
         distance = self._manhattan_distance(self.agent_pos, self.goal_pos)
-        print(f"🎯 Navigating from: {self.agent_pos} to {self.goal_pos} (distance: {distance})")
+        print(f"Navigating from: {self.agent_pos} to {self.goal_pos} (distance: {distance})")
         
         return predicted_goal
 
+    # Reset environment to initial. state
     def reset(self, *, seed=None, options=None):
-        """Reset environment to initial state"""
         super().reset(seed=seed)
         
         # Check if using NLP input
@@ -279,7 +267,7 @@ class TouristBotEnv(gym.Env):
         elif options and "goal_type" in options:
             self.goal_type = options["goal_type"]
         else:
-            # ✨ RANDOMIZE GOAL: Choose random goal type for better generalization
+            # RANDOMIZE GOAL: Choose random goal type for better generalization
             self.goal_type = random.choice(PLACE_TYPES)
         
         # Regenerate city map
@@ -312,9 +300,9 @@ class TouristBotEnv(gym.Env):
         }
         
         return observation, info
-
+    
+    # Execute action and return new state
     def step(self, action):
-        """Execute action and return new state"""
         self.steps += 1
         
         prev_pos = self.agent_pos.copy()
@@ -344,7 +332,7 @@ class TouristBotEnv(gym.Env):
         if goal_reached:
             reward = +100.0
             terminated = True
-            print(f"🎯 Goal '{self.goal_type}' reached in {self.steps} steps!")
+            print(f"Goal '{self.goal_type}' reached in {self.steps} steps")
         else:
             max_distance = GRID_SIZE * 2
             potential_prev = -prev_distance / max_distance
@@ -375,8 +363,8 @@ class TouristBotEnv(gym.Env):
         
         return observation, reward, terminated, truncated, info
 
+    # Render env
     def render(self):
-        """Render environment visually"""
         if self.render_mode is None:
             return None
         
@@ -493,18 +481,16 @@ class TouristBotEnv(gym.Env):
         ]
         
         if self.use_nlp:
-            # Mostrar estado de navegación
             if self.navigating:
                 status = "Status: NAVIGATING"
-                status_color = (100, 255, 100)  # Verde
+                status_color = (100, 255, 100) 
             else:
                 status = "Status: WAITING"
-                status_color = (255, 200, 100)  # Amarillo/Naranja
+                status_color = (255, 200, 100) 
             info_text.append(status)
         
         y_offset = 20
         for i, text in enumerate(info_text):
-            # Color especial para el status
             if self.use_nlp and "Status:" in text:
                 color = status_color
             else:
@@ -516,7 +502,7 @@ class TouristBotEnv(gym.Env):
                 (10, y_offset),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
-                color,  # Usar color dinámico
+                color, 
                 1
             )
             y_offset += 20
@@ -541,7 +527,6 @@ class TouristBotEnv(gym.Env):
                 2
             )
             
-            # Draw prompt - más claro sobre el estado
             if self.text_input_active:
                 prompt_text = "Type your instruction (press Enter):"
             elif self.navigating:
@@ -562,7 +547,7 @@ class TouristBotEnv(gym.Env):
             # Draw input text
             display_text = self.current_text_input if self.text_input_active else self.nlp_input
             if self.text_input_active:
-                display_text += "_"  # Show cursor
+                display_text += "_"  # Cursor
             
             # Truncate if too long
             max_chars = 55
@@ -635,7 +620,6 @@ class TouristBotEnv(gym.Env):
         
         return self.img if self.render_mode == 'rgb_array' else None
 
-    # ...existing code... (keep all private methods unchanged)
     def _generate_city_map(self):
         city_map = np.zeros((GRID_SIZE, GRID_SIZE), dtype=np.int8)
         
@@ -863,7 +847,6 @@ class TouristBotEnv(gym.Env):
         return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
     
     def _handle_keyboard_input(self):
-        """Handle keyboard input for text entry"""
         # Wait longer if text input is active to capture keystrokes better
         wait_time = 50 if self.text_input_active else 1
         key = cv2.waitKey(wait_time) & 0xFF
@@ -916,7 +899,6 @@ class TouristBotEnv(gym.Env):
                 print(f"Input: {self.current_text_input}")  # Debug: mostrar lo que se escribe
     
     def _handle_mouse_input(self):
-        """Handle mouse input for button clicks"""
         # Mouse callback for exit button
         def mouse_callback(event, x, y, flags, param):
             button_width = 80
@@ -939,50 +921,3 @@ class TouristBotEnv(gym.Env):
 
     def close(self):
         cv2.destroyAllWindows()
-
-
-# Test function with NLP
-def test_environment_with_nlp():
-    print("="*60)
-    print("TESTING TOURISTBOT WITH NLP")
-    print("="*60)
-    
-    env = TouristBotEnv(goal_type="restaurant", use_nlp=True, render_mode="human")
-    
-    # Test phrases
-    test_phrases = [
-        "I want to eat something",
-        "I'm hungry, where can I get food?",
-        "Let's watch a movie",
-        "I need to buy some clothes",
-        "Show me some art and history",
-        "I want to relax in nature"
-    ]
-    
-    for phrase in test_phrases:
-        print(f"\n{'='*60}")
-        print(f"Testing phrase: '{phrase}'")
-        observation, info = env.reset(options={"nlp_input": phrase})
-        
-        print(f"Agent at: {env.agent_pos}")
-        print(f"Detected goal: {info['goal_type']} at {info['goal_position']}")
-        
-        # Run a few random steps
-        for _ in range(10):
-            env.render()
-            action = env.action_space.sample()
-            observation, reward, terminated, truncated, info = env.step(action)
-            
-            if terminated or truncated:
-                break
-            
-            time.sleep(0.1)
-        
-        time.sleep(1)
-    
-    env.close()
-    print("\nTest completed")
-
-
-if __name__ == "__main__":
-    test_environment_with_nlp()

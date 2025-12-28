@@ -1,24 +1,3 @@
-"""
-Unified training script for TouristBot with support for:
-- Multiple RL algorithms (PPO, A2C, DQN)
-- Different hyperparameter configurations
-- Curriculum learning strategies
-- Easy command-line interface
-
-Usage:
-    # Train with specific algorithm
-    python train.py --algorithm ppo_basic
-    
-    # Train with curriculum learning
-    python train.py --algorithm ppo_basic --curriculum easy_to_hard
-    
-    # List all available options
-    python train.py --list
-    
-    # Test a trained model
-    python train.py --test models/ppo_basic/best_model.zip --episodes 10
-"""
-
 import os
 import argparse
 import numpy as np
@@ -32,30 +11,27 @@ import gymnasium as gym
 
 from touristbot_env import TouristBotEnv
 from training_configs import (
-    get_config, get_curriculum, get_env_config,
+    get_config, get_curriculum,
     list_available_configs, ALGORITHMS, CURRICULUM_STRATEGIES
 )
 
-
+# Callback to manage curriculum learning stages.
 class CurriculumCallback:
-    """Callback to manage curriculum learning stages."""
-    
     def __init__(self, stages, env_creator, model_creator, base_log_dir):
         self.stages = stages
         self.env_creator = env_creator
         self.model_creator = model_creator
         self.base_log_dir = base_log_dir
         self.current_stage = 0
-        
+
+    # Get current stage information.    
     def get_stage_info(self):
-        """Get current stage information."""
         if self.current_stage < len(self.stages):
             return self.stages[self.current_stage]
         return None
 
-
+# Create environment factory function.
 def make_env_creator(env_config, rank=0, seed=0):
-    """Create environment factory function."""
     def _init():
         env = TouristBotEnv(
             use_partial_obs=env_config.get("use_partial_obs", True),
@@ -67,9 +43,8 @@ def make_env_creator(env_config, rank=0, seed=0):
         return env
     return _init
 
-
+# Create RL algorithm instance based on name and config
 def create_algorithm(algo_name, config, env, tensorboard_log):
-    """Create RL algorithm instance based on name and config."""
     algo_type = config["algorithm"]
     
     if algo_type == "PPO":
@@ -138,20 +113,17 @@ def create_algorithm(algo_name, config, env, tensorboard_log):
 
 
 def train(algorithm_name, curriculum_name="none", custom_name=None):
-    """
-    Main training function with support for curriculum learning.
-    
-    Args:
-        algorithm_name: Name of algorithm config (e.g., 'ppo_basic')
-        curriculum_name: Name of curriculum strategy (e.g., 'easy_to_hard')
-        custom_name: Custom name for this training run
-    """
     # Get configurations
     config = get_config(algorithm_name)
-    curriculum = get_curriculum(curriculum_name)
+    curriculum = None
+    if curriculum_name != "none":
+        curriculum = get_curriculum(curriculum_name)
     
     # Setup directories
-    run_name = custom_name or f"{algorithm_name}_{curriculum_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    if curriculum_name!="none":
+        run_name = custom_name or f"{algorithm_name}_{curriculum_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    else:
+        run_name = custom_name or f"{algorithm_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     base_dir = f"./runs/{run_name}"
     log_dir = f"{base_dir}/logs"
     model_dir = f"{base_dir}/models"
@@ -166,28 +138,48 @@ def train(algorithm_name, curriculum_name="none", custom_name=None):
     print(f"TOURISTBOT TRAINING - {run_name.upper()}")
     print("="*70)
     print(f"\nAlgorithm: {algorithm_name} ({config['algorithm']})")
-    print(f"Curriculum: {curriculum['name']} - {curriculum['description']}")
-    print(f"Total Stages: {len(curriculum['stages'])}")
-    print(f"Total Timesteps: {sum(s['timesteps'] for s in curriculum['stages']):,}")
+    if curriculum:
+        print(f"Curriculum: {curriculum['name']} - {curriculum['description']}")
+        print(f"Total Stages: {len(curriculum['stages'])}")
+        print(f"Total Timesteps: {sum(s['timesteps'] for s in curriculum['stages']):,}")
+    else:
+        print(f"Training Mode: Single stage (no curriculum)")
+        print(f"Total Timesteps: {config.get('total_timesteps', 500000):,}")
     print(f"\nOutput Directory: {base_dir}")
     print(f"TensorBoard: tensorboard --logdir {tensorboard_log}")
     
     # Save configuration
     with open(f"{base_dir}/config.txt", "w") as f:
         f.write(f"Algorithm: {algorithm_name}\n")
-        f.write(f"Curriculum: {curriculum_name}\n")
-        f.write(f"Configuration:\n")
         for key, value in config.items():
             f.write(f"  {key}: {value}\n")
-        f.write(f"\nCurriculum Stages:\n")
-        for i, stage in enumerate(curriculum['stages'], 1):
-            f.write(f"  Stage {i}: {stage['description']}\n")
-            f.write(f"    Timesteps: {stage['timesteps']}\n")
-            f.write(f"    Env Config: {stage['env_config']}\n")
+        if curriculum:
+            f.write(f"Curriculum: {curriculum_name}\n")       
+            f.write(f"\nCurriculum Stages:\n")
+            for i, stage in enumerate(curriculum['stages'], 1):
+                f.write(f"  Stage {i}: {stage['description']}\n")
+                f.write(f"    Timesteps: {stage['timesteps']}\n")
+                f.write(f"    Env Config: {stage['env_config']}\n")
+        else:
+            f.write(f"Training Mode: Single stage\n")
     
-    # Training with curriculum
+    # Training
     model = None
     total_timesteps_trained = 0
+    
+    # If no curriculum, create a single stage
+    if not curriculum:
+        curriculum = {
+            'name': 'Single Stage',
+            'stages': [{
+                'description': 'Standard training',
+                'timesteps': config.get('total_timesteps', 500000),
+                'env_config': {
+                    'use_partial_obs': True,
+                    'view_size': 5
+                }
+            }]
+        }
     
     for stage_idx, stage in enumerate(curriculum['stages']):
         print(f"\n{'='*70}")
@@ -290,15 +282,6 @@ def train(algorithm_name, curriculum_name="none", custom_name=None):
 
 
 def test_model(model_path, n_episodes=5, render=True, env_config=None):
-    """
-    Test a trained model.
-    
-    Args:
-        model_path: Path to saved model (.zip file)
-        n_episodes: Number of episodes to run
-        render: Whether to render visualization
-        env_config: Environment configuration (default: standard config)
-    """
     print(f"\n{'='*70}")
     print("TESTING TRAINED MODEL")
     print(f"{'='*70}")
@@ -365,10 +348,10 @@ def test_model(model_path, n_episodes=5, render=True, env_config=None):
         # Record statistics
         if terminated:
             stats["success"] += 1
-            result = "✓ Success"
+            result = "Success"
         else:
             stats["timeout"] += 1
-            result = "✗ Timeout"
+            result = "Timeout"
         
         stats["steps"].append(steps)
         stats["rewards"].append(episode_reward)
@@ -393,30 +376,7 @@ def test_model(model_path, n_episodes=5, render=True, env_config=None):
 def main():
     parser = argparse.ArgumentParser(
         description="Train TouristBot with multiple algorithms and curriculum learning",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # List all available options
-  python train.py --list
-  
-  # Train with PPO basic configuration
-  python train.py --algorithm ppo_basic
-  
-  # Train with curriculum learning
-  python train.py --algorithm ppo_basic --curriculum easy_to_hard
-  
-  # Train with A2C
-  python train.py --algorithm a2c_basic
-  
-  # Train with DQN
-  python train.py --algorithm dqn_basic
-  
-  # Test a trained model
-  python train.py --test runs/ppo_basic_none_*/models/final_model.zip
-  
-  # Test with more episodes and no rendering
-  python train.py --test models/best_model.zip --episodes 20 --no-render
-        """
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
     parser.add_argument(

@@ -1,12 +1,4 @@
-"""
-Training configurations for different algorithms and strategies.
-Contains hyperparameters for PPO, A2C, DQN, and curriculum learning strategies.
-"""
-
-# ==============================================================================
 # PPO CONFIGURATIONS
-# ==============================================================================
-
 PPO_BASIC = {
     "algorithm": "PPO",
     "learning_rate": 3e-4,
@@ -58,10 +50,7 @@ PPO_CONSERVATIVE = {
     "n_envs": 4,  # Fewer parallel envs
 }
 
-# ==============================================================================
 # A2C CONFIGURATIONS
-# ==============================================================================
-
 A2C_BASIC = {
     "algorithm": "A2C",
     "learning_rate": 7e-4,
@@ -94,10 +83,7 @@ A2C_FAST = {
     "n_envs": 16,
 }
 
-# ==============================================================================
 # DQN CONFIGURATIONS
-# ==============================================================================
-
 DQN_BASIC = {
     "algorithm": "DQN",
     "learning_rate": 1e-4,
@@ -136,14 +122,7 @@ DQN_DOUBLE = {
     "n_envs": 1,
 }
 
-# ==============================================================================
 # CURRICULUM LEARNING STRATEGIES
-# ==============================================================================
-
-# ==============================================================================
-# NEW CURRICULUM LEARNING STRATEGIES (Beyond View Size)
-# ==============================================================================
-
 CURRICULUM_TIME_PRESSURE = {
     "name": "time_pressure",
     "description": "Gradually reduce max steps (time limit) to increase difficulty",
@@ -234,53 +213,23 @@ ALGORITHMS = {
 }
 
 CURRICULUM_STRATEGIES = {
-    "time_pressure": CURRICULUM_TIME_PRESSURE,
-    "sparse_rewards": CURRICULUM_SPARSE_REWARDS,
-}
-
-# ==============================================================================
-# ENVIRONMENT CONFIGURATIONS
-# ==============================================================================
-
-ENV_CONFIGS = {
-    "default": {
-        "use_partial_obs": True,
-        "view_size": 5,
-    },
-    "easy": {
-        "use_partial_obs": True,
-        "view_size": 7,
-    },
-    "hard": {
-        "use_partial_obs": True,
-        "view_size": 3,
-    },
-    "full_obs": {
-        "use_partial_obs": False,
-        "view_size": 20,
-    }
+    "curriculum_time_pressure": CURRICULUM_TIME_PRESSURE,
+    "curriculum_sparse_rewards": CURRICULUM_SPARSE_REWARDS,
 }
 
 
+# Get configuration by name
 def get_config(algorithm_name):
-    """Get configuration by name."""
     if algorithm_name not in ALGORITHMS:
         raise ValueError(f"Unknown algorithm: {algorithm_name}. Available: {list(ALGORITHMS.keys())}")
     return ALGORITHMS[algorithm_name].copy()
 
-
+# Get curriculum strategy by name
 def get_curriculum(curriculum_name):
-    """Get curriculum strategy by name."""
     if curriculum_name not in CURRICULUM_STRATEGIES:
         raise ValueError(f"Unknown curriculum: {curriculum_name}. Available: {list(CURRICULUM_STRATEGIES.keys())}")
     return CURRICULUM_STRATEGIES[curriculum_name].copy()
 
-
-def get_env_config(env_name):
-    """Get environment configuration by name."""
-    if env_name not in ENV_CONFIGS:
-        raise ValueError(f"Unknown env config: {env_name}. Available: {list(ENV_CONFIGS.keys())}")
-    return ENV_CONFIGS[env_name].copy()
 
 
 def list_available_configs():
@@ -308,15 +257,9 @@ def list_available_configs():
         print(f"  Description: {curriculum['description']}")
         print(f"  Stages: {len(curriculum['stages'])}")
         for i, stage in enumerate(curriculum['stages'], 1):
-            print(f"    Stage {i}: {stage['timesteps']:,} timesteps - {stage['description']}")
+            print(f"    Stage {i}: {stage['timesteps']:,} timesteps - {stage['description']}. Environment configuration: {stage["env_config"]}")
     
-    print("\n" + "="*70)
-    print("ENVIRONMENT CONFIGS")
-    print("="*70)
-    for name, config in ENV_CONFIGS.items():
-        print(f"\n{name}:")
-        print(f"  Partial Obs: {config['use_partial_obs']}")
-        print(f"  View Size: {config['view_size']}x{config['view_size']}")
+
 
 
 if __name__ == "__main__":

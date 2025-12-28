@@ -1,17 +1,3 @@
-"""
-Compare multiple trained models by testing them and generating a comparison report.
-
-Usage:
-    # Compare multiple models
-    python compare_models.py runs/ppo_basic_*/models/final_model.zip runs/a2c_basic_*/models/final_model.zip
-    
-    # Compare with more episodes
-    python compare_models.py --episodes 20 runs/*/models/best_model.zip
-    
-    # Save results to file
-    python compare_models.py --output comparison.txt runs/*/models/final_model.zip
-"""
-
 import argparse
 import glob
 import os
@@ -21,9 +7,8 @@ from stable_baselines3 import PPO, A2C, DQN
 
 from touristbot_env import TouristBotEnv
 
-
+# Load model, auto-detecting algorithm type
 def load_model(model_path):
-    """Load model, auto-detecting algorithm type."""
     # Try to infer from path
     path_lower = model_path.lower()
     
@@ -46,8 +31,8 @@ def load_model(model_path):
         raise ValueError(f"Error loading model {model_path}: {e}")
 
 
+# Test a single model and return statistics
 def test_single_model(model_path, n_episodes=10, verbose=False):
-    """Test a single model and return statistics."""
     if verbose:
         print(f"\nTesting: {model_path}")
     
@@ -109,9 +94,8 @@ def test_single_model(model_path, n_episodes=10, verbose=False):
     
     return stats
 
-
+# Compare multiple models and generate report
 def compare_models(model_paths, n_episodes=10, output_file=None):
-    """Compare multiple models and generate report."""
     print(f"\n{'='*80}")
     print("MODEL COMPARISON")
     print(f"{'='*80}")
@@ -126,12 +110,12 @@ def compare_models(model_paths, n_episodes=10, output_file=None):
         
         if stats:
             results.append(stats)
-            print(f"✓ Success rate: {stats['success_rate']*100:.1f}%")
+            print(f"Success rate: {stats['success_rate']*100:.1f}%")
         else:
-            print("✗ Failed")
+            print("Failed")
     
     if not results:
-        print("\n⚠ No models could be tested successfully.")
+        print("\nNo models could be tested successfully.")
         return
     
     # Sort by success rate, then by average steps (fewer is better)
@@ -204,21 +188,7 @@ def compare_models(model_paths, n_episodes=10, output_file=None):
 def main():
     parser = argparse.ArgumentParser(
         description="Compare multiple trained TouristBot models",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Compare all final models
-  python compare_models.py runs/*/models/final_model.zip
-  
-  # Compare all best models with 20 episodes each
-  python compare_models.py --episodes 20 runs/*/models/stage_1/best_model.zip
-  
-  # Compare specific models
-  python compare_models.py runs/ppo_basic_*/models/final_model.zip runs/a2c_basic_*/models/final_model.zip
-  
-  # Save results to file
-  python compare_models.py --output comparison.txt runs/*/models/best_model.zip
-        """
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
     parser.add_argument(
@@ -253,7 +223,7 @@ Examples:
             if os.path.exists(pattern):
                 model_paths.append(pattern)
             else:
-                print(f"⚠ Warning: No matches found for pattern: {pattern}")
+                print(f"No matches found for pattern: {pattern}")
     
     if not model_paths:
         print("Error: No model files found.")
