@@ -1,4 +1,4 @@
-# 🌆 TouristBot - Navegación con RL y Lenguaje Natural
+# 🌆 TouristBot - Navigation with RL and NLP
 
 Agent that navigates in a 2D city through specific places (restaurants, museums, shops, cinemas) using Reinforcement Learning and NLP.
 
